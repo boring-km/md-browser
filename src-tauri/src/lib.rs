@@ -28,6 +28,35 @@ pub fn run() {
             }
         }))
         .setup(|app| {
+            // Open files passed as CLI arguments on first launch
+            let args: Vec<String> = std::env::args().skip(1).collect();
+            let files: Vec<String> = args
+                .into_iter()
+                .filter(|s| s.ends_with(".md") || s.ends_with(".markdown"))
+                .map(|s| {
+                    // Resolve relative paths to absolute
+                    let p = std::path::Path::new(&s);
+                    if p.is_absolute() {
+                        s
+                    } else {
+                        std::env::current_dir()
+                            .map(|d| d.join(p).to_string_lossy().to_string())
+                            .unwrap_or(s)
+                    }
+                })
+                .collect();
+
+            if !files.is_empty() {
+                let app_handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    // Wait for the window to be ready before emitting
+                    std::thread::sleep(std::time::Duration::from_millis(600));
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.emit("open-files", &files);
+                    }
+                });
+            }
+
             let file_menu = SubmenuBuilder::new(app, "파일")
                 .text("open-folder", "폴더 열기")
                 .text("open-file", "파일 열기")
