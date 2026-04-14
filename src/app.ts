@@ -51,7 +51,6 @@ import {
   addRecentFile,
 } from "./settings/index";
 import type { DiffStats, FileEntry, RecentEntry } from "./types";
-import { patchOriginal } from "./editor/patch";
 import {
   hamburger,
   panelLeft,
@@ -178,9 +177,10 @@ async function init(): Promise<void> {
   rawToggleBtn.addEventListener("click", () => {
     isRawMode = !isRawMode;
     if (isRawMode) {
-      // Switch to raw mode
-      const content = editor?.getContent() ?? "";
-      rawEditor.value = content;
+      // Switch to raw mode — show original file content if available
+      const tab = getActiveTab();
+      const originalContent = tab ? rawFileContents.get(tab.filePath) : null;
+      rawEditor.value = originalContent ?? editor?.getContent() ?? "";
       editorContainer.classList.add("hidden");
       rawEditor.classList.remove("hidden");
       rawToggleBtn.innerHTML = editView;
@@ -196,6 +196,9 @@ async function init(): Promise<void> {
       const tab = getActiveTab();
       if (tab && editor) {
         editor.setContent(rawContent);
+        // Update baseline and raw cache since user edited raw text directly
+        rawFileContents.set(tab.filePath, rawContent);
+        serializerBaselines.set(tab.filePath, editor.getContent());
         updateTabContent(tab.id, rawContent);
         markDirty(tab.id);
         updateToc(editor.view);
@@ -660,6 +663,35 @@ function handleEditorChange(): void {
 async function handleSave(): Promise<void> {
   const tab = getActiveTab();
   if (!tab || !editor) return;
+
+  // Raw mode: save raw text directly (preserves original formatting)
+  if (isRawMode) {
+    const rawEl = document.getElementById("raw-editor") as HTMLTextAreaElement;
+    const rawContent = rawEl.value;
+
+    if (tab.isUnsaved) {
+      const filePath = await save({
+        filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
+        defaultPath: tab.fileName,
+      });
+      if (!filePath) return;
+      await invoke("write_file", { filePath, content: rawContent });
+      markSaved(tab.id, filePath);
+      markClean(filePath, rawContent);
+      return;
+    }
+
+    await invoke("write_file", {
+      filePath: tab.filePath,
+      content: rawContent,
+    });
+    rawFileContents.set(tab.filePath, rawContent);
+    markClean(tab.id, rawContent);
+    refreshDiffStats(tab.id, tab.filePath);
+    return;
+  }
+
+  // WYSIWYG mode: save serializer output
   const content = editor.getContent();
 
   if (tab.isUnsaved) {
@@ -681,15 +713,8 @@ async function handleSave(): Promise<void> {
     return;
   }
 
-  // Patch user edits onto original text to preserve formatting
-  const original = rawFileContents.get(tab.filePath);
-  const saveContent =
-    original !== undefined && baseline !== undefined
-      ? patchOriginal(original, baseline, content)
-      : content;
-
-  await invoke("write_file", { filePath: tab.filePath, content: saveContent });
-  rawFileContents.set(tab.filePath, saveContent);
+  await invoke("write_file", { filePath: tab.filePath, content });
+  rawFileContents.set(tab.filePath, content);
   serializerBaselines.set(tab.filePath, content);
   markClean(tab.id, content);
   refreshDiffStats(tab.id, tab.filePath);
