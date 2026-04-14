@@ -54,6 +54,16 @@ pub fn run() {
                 .text("font-size-reset", "크기 초기화")
                 .build()?;
 
+            let edit_menu = SubmenuBuilder::new(app, "편집")
+                .undo()
+                .redo()
+                .separator()
+                .cut()
+                .copy()
+                .paste()
+                .select_all()
+                .build()?;
+
             let view_menu = SubmenuBuilder::new(app, "보기")
                 .item(&theme_menu)
                 .item(&font_menu)
@@ -64,6 +74,7 @@ pub fn run() {
 
             let menu = MenuBuilder::new(app)
                 .item(&file_menu)
+                .item(&edit_menu)
                 .item(&view_menu)
                 .build()?;
 

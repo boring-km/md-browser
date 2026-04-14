@@ -13,6 +13,8 @@ export interface Editor {
   destroy(): void;
 }
 
+let suppressChange = false;
+
 export function createEditor(
   container: HTMLElement,
   onChange?: () => void,
@@ -31,9 +33,11 @@ export function createEditor(
     dispatchTransaction(transaction) {
       const newState = view.state.apply(transaction);
       view.updateState(newState);
-      if (transaction.docChanged && onChange) {
+      if (transaction.docChanged && onChange && !suppressChange) {
         onChange();
+        suppressChange = true;
         renderMermaidBlocks(container);
+        suppressChange = false;
       }
     },
   });
@@ -46,7 +50,9 @@ export function createEditor(
       plugins: [...buildPlugins()],
     });
     view.updateState(newState);
+    suppressChange = true;
     renderMermaidBlocks(container);
+    suppressChange = false;
   }
 
   function getContent(): string {
