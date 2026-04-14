@@ -14,6 +14,9 @@ let currentMatchIndex = -1;
 let caseSensitive = false;
 let useRegex = false;
 
+let matchInfoEl: HTMLSpanElement | null = null;
+let queryInputEl: HTMLInputElement | null = null;
+
 export function initSearch(
   searchBar: HTMLElement,
   editorView: EditorView,
@@ -31,16 +34,14 @@ export function showSearch(): void {
   if (!searchBarEl) return;
   searchBarEl.classList.remove("hidden");
   replaceRowEl?.classList.add("hidden");
-  const input = searchBarEl.querySelector<HTMLInputElement>(".search-query");
-  input?.focus();
+  queryInputEl?.focus();
 }
 
 export function showReplace(): void {
   if (!searchBarEl) return;
   searchBarEl.classList.remove("hidden");
   replaceRowEl?.classList.remove("hidden");
-  const input = searchBarEl.querySelector<HTMLInputElement>(".search-query");
-  input?.focus();
+  queryInputEl?.focus();
 }
 
 export function hideSearch(): void {
@@ -50,91 +51,112 @@ export function hideSearch(): void {
   currentMatchIndex = -1;
 }
 
+function createButton(
+  className: string,
+  text: string,
+  title: string,
+): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.className = `search-btn ${className}`;
+  btn.textContent = text;
+  btn.title = title;
+  return btn;
+}
+
+function createInput(
+  className: string,
+  placeholder: string,
+): HTMLInputElement {
+  const input = document.createElement("input");
+  input.className = `search-input ${className}`;
+  input.placeholder = placeholder;
+  return input;
+}
+
 function buildSearchUI(): void {
   if (!searchBarEl) return;
+  searchBarEl.innerHTML = "";
 
-  searchBarEl.innerHTML = `
-    <input class="search-input search-query" placeholder="검색..." />
-    <button class="search-btn case-btn" title="대소문자 구분">Aa</button>
-    <button class="search-btn regex-btn" title="정규식">.*</button>
-    <span class="search-info match-info">0/0</span>
-    <button class="search-btn prev-btn" title="이전">\u2191</button>
-    <button class="search-btn next-btn" title="다음">\u2193</button>
-    <button class="search-btn replace-toggle-btn" title="치환 모드">\u21C4</button>
-    <button class="search-btn close-search-btn" style="margin-left:auto" title="닫기">\u2715</button>
-  `;
+  queryInputEl = createInput("search-query", "검색...");
+  const caseBtn = createButton("case-btn", "Aa", "대소문자 구분");
+  const regexBtn = createButton("regex-btn", ".*", "정규식");
+  matchInfoEl = document.createElement("span");
+  matchInfoEl.className = "search-info match-info";
+  matchInfoEl.textContent = "0/0";
+  const prevBtn = createButton("prev-btn", "\u2191", "이전");
+  const nextBtn = createButton("next-btn", "\u2193", "다음");
+  const replaceToggleBtn = createButton(
+    "replace-toggle-btn",
+    "\u21C4",
+    "치환 모드",
+  );
+  const closeBtn = createButton("close-search-btn", "\u2715", "닫기");
+  closeBtn.style.marginLeft = "auto";
 
+  searchBarEl.appendChild(queryInputEl);
+  searchBarEl.appendChild(caseBtn);
+  searchBarEl.appendChild(regexBtn);
+  searchBarEl.appendChild(matchInfoEl);
+  searchBarEl.appendChild(prevBtn);
+  searchBarEl.appendChild(nextBtn);
+  searchBarEl.appendChild(replaceToggleBtn);
+  searchBarEl.appendChild(closeBtn);
+
+  // Replace row
   replaceRowEl = document.createElement("div");
   replaceRowEl.className = "search-replace-row hidden";
-  replaceRowEl.innerHTML = `
-    <input class="search-input replace-input" placeholder="치환..." />
-    <button class="search-btn replace-one-btn" title="치환">치환</button>
-    <button class="search-btn replace-all-btn" title="전체 치환">전체</button>
-  `;
+  const replaceInput = createInput("replace-input", "치환...");
+  const replaceOneBtn = createButton("replace-one-btn", "치환", "치환");
+  const replaceAllBtn = createButton(
+    "replace-all-btn",
+    "전체",
+    "전체 치환",
+  );
+  replaceRowEl.appendChild(replaceInput);
+  replaceRowEl.appendChild(replaceOneBtn);
+  replaceRowEl.appendChild(replaceAllBtn);
   searchBarEl.parentElement?.insertBefore(
     replaceRowEl,
     searchBarEl.nextSibling,
   );
 
-  const queryInput =
-    searchBarEl.querySelector<HTMLInputElement>(".search-query")!;
-  const caseBtn =
-    searchBarEl.querySelector<HTMLButtonElement>(".case-btn")!;
-  const regexBtn =
-    searchBarEl.querySelector<HTMLButtonElement>(".regex-btn")!;
-  const prevBtn =
-    searchBarEl.querySelector<HTMLButtonElement>(".prev-btn")!;
-  const nextBtn =
-    searchBarEl.querySelector<HTMLButtonElement>(".next-btn")!;
-  const replaceToggleBtn =
-    searchBarEl.querySelector<HTMLButtonElement>(".replace-toggle-btn")!;
-  const closeBtn =
-    searchBarEl.querySelector<HTMLButtonElement>(".close-search-btn")!;
-  const matchInfo =
-    searchBarEl.querySelector<HTMLSpanElement>(".match-info")!;
-  const replaceInput =
-    replaceRowEl.querySelector<HTMLInputElement>(".replace-input")!;
-  const replaceOneBtn =
-    replaceRowEl.querySelector<HTMLButtonElement>(".replace-one-btn")!;
-  const replaceAllBtn =
-    replaceRowEl.querySelector<HTMLButtonElement>(".replace-all-btn")!;
-
-  queryInput.addEventListener("input", () => {
-    findMatches(queryInput.value);
-    updateMatchInfo(matchInfo);
+  // Events
+  queryInputEl.addEventListener("input", () => {
+    findMatches(queryInputEl!.value);
+    updateMatchInfo();
     highlightCurrent();
   });
 
-  queryInput.addEventListener("keydown", (e) => {
+  queryInputEl.addEventListener("keydown", (e) => {
     if (e.key === "Escape") hideSearch();
     if (e.key === "Enter") {
       if (e.shiftKey) goToPrev();
       else goToNext();
-      updateMatchInfo(matchInfo);
+      updateMatchInfo();
     }
   });
 
   caseBtn.addEventListener("click", () => {
     caseSensitive = !caseSensitive;
     caseBtn.classList.toggle("active", caseSensitive);
-    findMatches(queryInput.value);
-    updateMatchInfo(matchInfo);
+    findMatches(queryInputEl!.value);
+    updateMatchInfo();
   });
 
   regexBtn.addEventListener("click", () => {
     useRegex = !useRegex;
     regexBtn.classList.toggle("active", useRegex);
-    findMatches(queryInput.value);
-    updateMatchInfo(matchInfo);
+    findMatches(queryInputEl!.value);
+    updateMatchInfo();
   });
 
   prevBtn.addEventListener("click", () => {
     goToPrev();
-    updateMatchInfo(matchInfo);
+    updateMatchInfo();
   });
   nextBtn.addEventListener("click", () => {
     goToNext();
-    updateMatchInfo(matchInfo);
+    updateMatchInfo();
   });
   closeBtn.addEventListener("click", () => hideSearch());
 
@@ -144,15 +166,57 @@ function buildSearchUI(): void {
 
   replaceOneBtn.addEventListener("click", () => {
     replaceOne(replaceInput.value);
-    findMatches(queryInput.value);
-    updateMatchInfo(matchInfo);
+    findMatches(queryInputEl!.value);
+    updateMatchInfo();
   });
 
   replaceAllBtn.addEventListener("click", () => {
-    replaceAll(queryInput.value, replaceInput.value);
-    findMatches(queryInput.value);
-    updateMatchInfo(matchInfo);
+    replaceAll(replaceInput.value);
+    findMatches(queryInputEl!.value);
+    updateMatchInfo();
   });
+}
+
+interface TextChunk {
+  readonly text: string;
+  readonly pos: number;
+}
+
+function buildTextMap(): { text: string; chunks: TextChunk[] } {
+  if (!view) return { text: "", chunks: [] };
+  const chunks: TextChunk[] = [];
+  let fullText = "";
+
+  view.state.doc.descendants((node, pos) => {
+    if (node.isText && node.text) {
+      chunks.push({ text: node.text, pos });
+      fullText += node.text;
+    } else if (node.isBlock && fullText.length > 0) {
+      chunks.push({ text: "\n", pos: -1 });
+      fullText += "\n";
+    }
+  });
+
+  return { text: fullText, chunks };
+}
+
+function textOffsetToDocPos(
+  chunks: readonly TextChunk[],
+  offset: number,
+): number {
+  let consumed = 0;
+  for (const chunk of chunks) {
+    if (chunk.pos === -1) {
+      consumed += chunk.text.length;
+      continue;
+    }
+    const chunkEnd = consumed + chunk.text.length;
+    if (offset < chunkEnd) {
+      return chunk.pos + (offset - consumed);
+    }
+    consumed = chunkEnd;
+  }
+  return view?.state.doc.content.size ?? 0;
 }
 
 function findMatches(query: string): void {
@@ -160,7 +224,7 @@ function findMatches(query: string): void {
   currentMatchIndex = -1;
   if (!view || !query) return;
 
-  const text = view.state.doc.textContent;
+  const { text, chunks } = buildTextMap();
 
   try {
     let pattern: RegExp;
@@ -173,24 +237,26 @@ function findMatches(query: string): void {
 
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(text)) !== null) {
-      matches.push({
-        from: match.index + 1,
-        to: match.index + match[0].length + 1,
-      });
+      const from = textOffsetToDocPos(chunks, match.index);
+      const to = textOffsetToDocPos(chunks, match.index + match[0].length);
+      if (from < to) {
+        matches.push({ from, to });
+      }
       if (match[0].length === 0) break;
     }
   } catch {
-    // invalid regex — ignore
+    // invalid regex
   }
 
   if (matches.length > 0) currentMatchIndex = 0;
 }
 
-function updateMatchInfo(el: HTMLSpanElement): void {
+function updateMatchInfo(): void {
+  if (!matchInfoEl) return;
   if (matches.length === 0) {
-    el.textContent = "0/0";
+    matchInfoEl.textContent = "0/0";
   } else {
-    el.textContent = `${currentMatchIndex + 1}/${matches.length}`;
+    matchInfoEl.textContent = `${currentMatchIndex + 1}/${matches.length}`;
   }
 }
 
@@ -222,23 +288,34 @@ function replaceOne(replaceText: string): void {
   if (!view || currentMatchIndex < 0 || currentMatchIndex >= matches.length)
     return;
   const match = matches[currentMatchIndex];
-  const tr = view.state.tr.replaceWith(
-    match.from,
-    match.to,
-    view.state.schema.text(replaceText),
-  );
+  let tr;
+  if (replaceText === "") {
+    tr = view.state.tr.delete(match.from, match.to);
+  } else {
+    tr = view.state.tr.replaceWith(
+      match.from,
+      match.to,
+      view.state.schema.text(replaceText),
+    );
+  }
   view.dispatch(tr);
 }
 
-function replaceAll(query: string, replaceText: string): void {
+function replaceAll(replaceText: string): void {
   if (!view || matches.length === 0) return;
   let tr = view.state.tr;
-  let offset = 0;
-  for (const match of matches) {
-    const from = match.from + offset;
-    const to = match.to + offset;
-    tr = tr.replaceWith(from, to, view.state.schema.text(replaceText));
-    offset += replaceText.length - (match.to - match.from);
+  // Process in reverse order to avoid position invalidation
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const match = matches[i];
+    if (replaceText === "") {
+      tr = tr.delete(match.from, match.to);
+    } else {
+      tr = tr.replaceWith(
+        match.from,
+        match.to,
+        view.state.schema.text(replaceText),
+      );
+    }
   }
   view.dispatch(tr);
 }

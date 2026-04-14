@@ -18,6 +18,7 @@ import {
   getActiveTab,
   markDirty,
   markClean,
+  updateTabContent,
   getTabState,
 } from "./tabs/index";
 import {
@@ -48,6 +49,7 @@ import {
 import type { FileEntry } from "./types";
 
 let editor: Editor | null = null;
+let cleanupImageHandler: (() => void) | null = null;
 let currentDir: string | null = null;
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -91,7 +93,7 @@ async function init(): Promise<void> {
   // Editor
   editor = createEditor(editorContainer, handleEditorChange);
   initSearch(searchBar, editor.view);
-  setupImageHandler(editor.view, () => {
+  cleanupImageHandler = setupImageHandler(editor.view, () => {
     const tab = getActiveTab();
     if (!tab) return null;
     const parts = tab.filePath.split("/");
@@ -275,6 +277,8 @@ function loadTabInEditor(content: string): void {
 function handleEditorChange(): void {
   const tab = getActiveTab();
   if (!tab || !editor) return;
+  const content = editor.getContent();
+  updateTabContent(tab.id, content);
   markDirty(tab.id);
 
   if (saveTimeout) clearTimeout(saveTimeout);

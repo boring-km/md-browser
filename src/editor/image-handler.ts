@@ -5,14 +5,27 @@ import { editorSchema } from "./schema";
 export function setupImageHandler(
   view: EditorView,
   getDocDir: () => string | null,
-): void {
-  view.dom.addEventListener("paste", (event: Event) => {
-    handlePaste(view, event as ClipboardEvent, getDocDir);
-  });
+): () => void {
+  const controller = new AbortController();
+  const { signal } = controller;
 
-  view.dom.addEventListener("drop", (event: Event) => {
-    handleDrop(view, event as DragEvent, getDocDir);
-  });
+  view.dom.addEventListener(
+    "paste",
+    (event: Event) => {
+      handlePaste(view, event as ClipboardEvent, getDocDir);
+    },
+    { signal },
+  );
+
+  view.dom.addEventListener(
+    "drop",
+    (event: Event) => {
+      handleDrop(view, event as DragEvent, getDocDir);
+    },
+    { signal },
+  );
+
+  return () => controller.abort();
 }
 
 async function handlePaste(
