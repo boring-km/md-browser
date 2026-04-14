@@ -78,6 +78,8 @@ async function init(): Promise<void> {
   const tocToggleBtn = document.getElementById("toc-toggle-btn")!;
   const tocCloseBtn = document.getElementById("toc-close-btn")!;
   const newFileBtn = document.getElementById("new-file-btn")!;
+  const openFolderBtn = document.getElementById("open-folder-btn")!;
+  const openFolderEmptyBtn = document.getElementById("open-folder-empty-btn")!;
 
   // Sidebar
   initSidebar(sidebarEl, fileTreeEl, handleFileSelect);
@@ -122,6 +124,10 @@ async function init(): Promise<void> {
 
   // New file button
   newFileBtn.addEventListener("click", handleNewFile);
+
+  // Open folder buttons
+  openFolderBtn.addEventListener("click", handleOpenFolder);
+  openFolderEmptyBtn.addEventListener("click", handleOpenFolder);
 
   // Keyboard shortcuts
   document.addEventListener("keydown", (e) => {
@@ -218,6 +224,8 @@ async function handleOpenFolder(): Promise<void> {
   currentDir = dirPath;
   const parts = dirPath.split("/");
   setSidebarTitle(parts[parts.length - 1] ?? dirPath);
+  const emptyEl = document.getElementById("file-tree-empty");
+  if (emptyEl) emptyEl.style.display = "none";
   const entries: FileEntry[] = await invoke("read_directory", { dirPath });
   renderTree(entries);
 }
