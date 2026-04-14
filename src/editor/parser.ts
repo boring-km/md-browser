@@ -6,14 +6,27 @@ const md = markdownit("commonmark", { html: false })
   .enable("strikethrough")
   .enable("table");
 
+function listIsTight(tokens: readonly any[], i: number): boolean {
+  while (++i < tokens.length) {
+    if (tokens[i].type !== "list_item_open") return tokens[i].hidden;
+  }
+  return false;
+}
+
 export const markdownParser = new MarkdownParser(editorSchema, md, {
   blockquote: { block: "blockquote" },
   paragraph: { block: "paragraph" },
   list_item: { block: "list_item" },
-  bullet_list: { block: "bullet_list" },
+  bullet_list: {
+    block: "bullet_list",
+    getAttrs: (_tok, tokens, i) => ({ tight: listIsTight(tokens, i) }),
+  },
   ordered_list: {
     block: "ordered_list",
-    getAttrs: (tok) => ({ order: +(tok.attrGet("start") ?? 1) }),
+    getAttrs: (tok, tokens, i) => ({
+      order: +(tok.attrGet("start") ?? 1),
+      tight: listIsTight(tokens, i),
+    }),
   },
   heading: {
     block: "heading",

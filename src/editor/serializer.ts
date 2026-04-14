@@ -26,14 +26,32 @@ export const markdownSerializer = new MarkdownSerializer(
       state.closeBlock(node);
     },
     bullet_list(state: MarkdownSerializerState, node: Node) {
-      state.renderList(node, "  ", () => "- ");
+      state.renderList(node, "   ", () => "- ");
     },
     ordered_list(state: MarkdownSerializerState, node: Node) {
       const start: number = node.attrs.order ?? 1;
-      state.renderList(node, "  ", (i: number) => `${start + i}. `);
+      const maxW = String(start + node.childCount - 1).length;
+      const space = " ".repeat(maxW + 2);
+      state.renderList(node, space, (i: number) => {
+        const nStr = String(start + i);
+        return " ".repeat(maxW - nStr.length) + nStr + ". ";
+      });
     },
     list_item(state: MarkdownSerializerState, node: Node) {
-      state.renderContent(node);
+      // Custom render: if the list_item contains a paragraph followed by
+      // a list, suppress the blank line between them (tight sub-list).
+      if (
+        node.childCount === 2 &&
+        node.child(0).type.name === "paragraph" &&
+        (node.child(1).type.name === "bullet_list" ||
+          node.child(1).type.name === "ordered_list")
+      ) {
+        state.renderInline(node.child(0));
+        state.ensureNewLine();
+        state.render(node.child(1), node, 1);
+      } else {
+        state.renderContent(node);
+      }
     },
     paragraph(state: MarkdownSerializerState, node: Node) {
       state.renderInline(node);
