@@ -7,7 +7,32 @@
     <link rel="stylesheet" href="/src/styles/base.css" />
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+          <span class="sidebar-title"></span>
+          <button id="new-file-btn" class="icon-btn" title="새 파일">+</button>
+          <button id="sidebar-close-btn" class="icon-btn" title="사이드바 닫기">◀</button>
+        </div>
+        <div id="file-tree" class="file-tree"></div>
+      </aside>
+      <main class="main-area">
+        <div class="toolbar">
+          <button id="sidebar-toggle-btn" class="icon-btn" title="사이드바 열기">☰</button>
+          <div id="tab-bar" class="tab-bar"></div>
+          <button id="toc-toggle-btn" class="icon-btn" title="목차">≡</button>
+        </div>
+        <div id="search-bar" class="search-bar hidden"></div>
+        <div id="editor-container" class="editor-container"></div>
+      </main>
+      <aside id="toc-panel" class="toc-panel">
+        <div class="toc-header">
+          <span class="toc-title">목차</span>
+          <button id="toc-close-btn" class="icon-btn" title="목차 닫기">▶</button>
+        </div>
+        <div id="toc-content" class="toc-content"></div>
+      </aside>
+    </div>
     <script type="module" src="/src/app.ts"></script>
   </body>
 </html>
