@@ -20,7 +20,6 @@ import {
   markClean,
   markSaved,
   updateTabContent,
-  updateDiffStats,
   getTabState,
 } from "./tabs/index";
 import {
@@ -50,24 +49,17 @@ import {
   addRecentFolder,
   addRecentFile,
 } from "./settings/index";
-import type { DiffStats, FileEntry, RecentEntry } from "./types";
+import type { FileEntry, RecentEntry } from "./types";
 import {
   hamburger,
   panelLeft,
   panelRight,
-  codeView,
-  editView,
 } from "./icons/index";
 
 let editor: Editor | null = null;
 let cleanupImageHandler: (() => void) | null = null;
 let currentDir: string | null = null;
 let unsavedFileCounter = 0;
-let isRawMode = false;
-// Stores the raw file content as read from disk (before ProseMirror round-trip)
-const rawFileContents = new Map<string, string>();
-// Stores the serializer baseline (ProseMirror round-trip of original) to detect real edits
-const serializerBaselines = new Map<string, string>();
 
 async function init(): Promise<void> {
   const settings = await loadSettings();
@@ -94,8 +86,6 @@ async function init(): Promise<void> {
   const tocToggleBtn = document.getElementById("toc-toggle-btn")!;
   const tocOpenBtn = document.getElementById("toc-open-btn")!;
   const hamburgerMenuBtn = document.getElementById("hamburger-menu-btn")!;
-  const rawToggleBtn = document.getElementById("raw-toggle-btn")!;
-  const rawEditor = document.getElementById("raw-editor") as HTMLTextAreaElement;
 
   // Set button icons
   hamburgerMenuBtn.innerHTML = hamburger;
@@ -103,7 +93,6 @@ async function init(): Promise<void> {
   sidebarOpenBtn.innerHTML = panelLeft;
   tocToggleBtn.innerHTML = panelRight;
   tocOpenBtn.innerHTML = panelRight;
-  rawToggleBtn.innerHTML = codeView;
 
   // Sidebar
   initSidebar(sidebarEl, fileTreeEl, handleFileSelect);
@@ -171,48 +160,6 @@ async function init(): Promise<void> {
 
   // Set initial button visibility
   updatePanelButtons();
-
-  // Raw markdown toggle
-  rawToggleBtn.addEventListener("click", () => {
-    isRawMode = !isRawMode;
-    if (isRawMode) {
-      // Switch to raw mode — show original file content if available
-      const tab = getActiveTab();
-      const originalContent = tab ? rawFileContents.get(tab.filePath) : null;
-      rawEditor.value = originalContent ?? editor?.getContent() ?? "";
-      editorContainer.classList.add("hidden");
-      rawEditor.classList.remove("hidden");
-      rawToggleBtn.innerHTML = editView;
-      rawToggleBtn.title = "편집기 보기";
-    } else {
-      // Switch back to editor mode
-      const rawContent = rawEditor.value;
-      rawEditor.classList.add("hidden");
-      editorContainer.classList.remove("hidden");
-      rawToggleBtn.innerHTML = codeView;
-      rawToggleBtn.title = "Raw 마크다운 보기";
-      // Apply raw content back to editor
-      const tab = getActiveTab();
-      if (tab && editor) {
-        editor.setContent(rawContent);
-        // Update baseline and raw cache since user edited raw text directly
-        rawFileContents.set(tab.filePath, rawContent);
-        serializerBaselines.set(tab.filePath, editor.getContent());
-        updateTabContent(tab.id, rawContent);
-        markDirty(tab.id);
-        updateToc(editor.view);
-      }
-    }
-  });
-
-  // Sync raw editor changes
-  rawEditor.addEventListener("input", () => {
-    const tab = getActiveTab();
-    if (tab) {
-      updateTabContent(tab.id, rawEditor.value);
-      markDirty(tab.id);
-    }
-  });
 
   // Hamburger menu
   hamburgerMenuBtn.addEventListener("click", (e) => {
@@ -557,17 +504,6 @@ async function openFolder(dirPath: string): Promise<void> {
   await updateSettings({ lastOpenFolder: dirPath });
 }
 
-async function refreshDiffStats(tabId: string, filePath: string): Promise<void> {
-  try {
-    const stats: DiffStats | null = await invoke("get_git_diff_stats", {
-      filePath,
-    });
-    updateDiffStats(tabId, stats);
-  } catch {
-    updateDiffStats(tabId, null);
-  }
-}
-
 async function handleFileSelect(
   filePath: string,
   fileName: string,
@@ -582,17 +518,11 @@ async function handleFileSelect(
   }
 
   const content: string = await invoke("read_file", { filePath });
-  rawFileContents.set(filePath, content);
   openTab(filePath, fileName, content);
   loadTabInEditor(content);
-  // Store serializer baseline to detect real user edits vs round-trip differences
-  if (editor) {
-    serializerBaselines.set(filePath, editor.getContent());
-  }
   setActiveFile(filePath);
   if (getSettings().tocVisible) setTocVisible(true);
   await addRecentFile(filePath, fileName);
-  refreshDiffStats(filePath, filePath);
 }
 
 function handleTabSelect(filePath: string): void {
@@ -612,12 +542,7 @@ function handleTabClose(id: string, isDirty: boolean): void {
     );
     if (!confirmed) return;
   }
-  const filePath = tab?.filePath;
   closeTab(id);
-  if (filePath) {
-    rawFileContents.delete(filePath);
-    serializerBaselines.delete(filePath);
-  }
   const active = getActiveTab();
   if (active) {
     loadTabInEditor(active.content);
@@ -634,11 +559,6 @@ function loadTabInEditor(content: string): void {
   editor.setContent(content);
   updateEditorView(editor.view);
   updateToc(editor.view);
-  // Sync raw editor if in raw mode
-  if (isRawMode) {
-    const rawEditor = document.getElementById("raw-editor") as HTMLTextAreaElement;
-    rawEditor.value = content;
-  }
 }
 
 function handleEditorChange(): void {
@@ -646,46 +566,12 @@ function handleEditorChange(): void {
   if (!tab || !editor) return;
   const content = editor.getContent();
   updateTabContent(tab.id, content);
-
-  // Don't mark dirty if content matches serializer baseline (round-trip artifact)
-  const baseline = serializerBaselines.get(tab.filePath);
-  if (baseline !== undefined && content === baseline) return;
-
   markDirty(tab.id);
 }
 
 async function handleSave(): Promise<void> {
   const tab = getActiveTab();
   if (!tab || !editor) return;
-
-  // Raw mode: save raw text directly (preserves original formatting)
-  if (isRawMode) {
-    const rawEl = document.getElementById("raw-editor") as HTMLTextAreaElement;
-    const rawContent = rawEl.value;
-
-    if (tab.isUnsaved) {
-      const filePath = await save({
-        filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
-        defaultPath: tab.fileName,
-      });
-      if (!filePath) return;
-      await invoke("write_file", { filePath, content: rawContent });
-      markSaved(tab.id, filePath);
-      markClean(filePath, rawContent);
-      return;
-    }
-
-    await invoke("write_file", {
-      filePath: tab.filePath,
-      content: rawContent,
-    });
-    rawFileContents.set(tab.filePath, rawContent);
-    markClean(tab.id, rawContent);
-    refreshDiffStats(tab.id, tab.filePath);
-    return;
-  }
-
-  // WYSIWYG mode: save serializer output
   const content = editor.getContent();
 
   if (tab.isUnsaved) {
@@ -700,18 +586,8 @@ async function handleSave(): Promise<void> {
     return;
   }
 
-  // Skip save if serializer output matches baseline (no real user edit)
-  const baseline = serializerBaselines.get(tab.filePath);
-  if (baseline !== undefined && content === baseline) {
-    markClean(tab.id, content);
-    return;
-  }
-
   await invoke("write_file", { filePath: tab.filePath, content });
-  rawFileContents.set(tab.filePath, content);
-  serializerBaselines.set(tab.filePath, content);
   markClean(tab.id, content);
-  refreshDiffStats(tab.id, tab.filePath);
 }
 
 function handleExportPdf(): void {

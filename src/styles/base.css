@@ -245,13 +245,6 @@ body {
   font-size: 10px;
 }
 
-.tab-diff {
-  font-size: 10px;
-  color: var(--text-secondary);
-  font-family: var(--code-font-family);
-  white-space: nowrap;
-}
-
 .tab-unsaved {
   color: #e5a00d;
   font-size: 10px;
@@ -275,21 +268,6 @@ body {
   padding: 24px 40px;
 }
 
-.raw-editor {
-  flex: 1;
-  padding: 24px 40px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  border: none;
-  outline: none;
-  resize: none;
-  font-family: var(--code-font-family);
-  font-size: 14px;
-  line-height: 1.8;
-  tab-size: 4;
-  overflow-y: auto;
-  width: 100%;
-}
 
 .editor-container .ProseMirror {
   max-width: 720px;
