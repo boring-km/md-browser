@@ -63,7 +63,6 @@ import {
 let editor: Editor | null = null;
 let cleanupImageHandler: (() => void) | null = null;
 let currentDir: string | null = null;
-let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 let unsavedFileCounter = 0;
 let isRawMode = false;
 // Stores the raw file content as read from disk (before ProseMirror round-trip)
@@ -653,12 +652,6 @@ function handleEditorChange(): void {
   if (baseline !== undefined && content === baseline) return;
 
   markDirty(tab.id);
-
-  // 임시 파일은 자동 저장 안 함
-  if (tab.isUnsaved) return;
-
-  if (saveTimeout) clearTimeout(saveTimeout);
-  saveTimeout = setTimeout(() => handleSave(), 1000);
 }
 
 async function handleSave(): Promise<void> {
