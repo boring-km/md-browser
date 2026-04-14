@@ -65,6 +65,10 @@ let currentDir: string | null = null;
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 let unsavedFileCounter = 0;
 let isRawMode = false;
+// Stores the raw file content as read from disk (before ProseMirror round-trip)
+const rawFileContents = new Map<string, string>();
+// Stores the serializer baseline (ProseMirror round-trip of original) to detect real edits
+const serializerBaselines = new Map<string, string>();
 
 async function init(): Promise<void> {
   const settings = await loadSettings();
@@ -578,8 +582,13 @@ async function handleFileSelect(
   }
 
   const content: string = await invoke("read_file", { filePath });
+  rawFileContents.set(filePath, content);
   openTab(filePath, fileName, content);
   loadTabInEditor(content);
+  // Store serializer baseline to detect real user edits vs round-trip differences
+  if (editor) {
+    serializerBaselines.set(filePath, editor.getContent());
+  }
   setActiveFile(filePath);
   if (getSettings().tocVisible) setTocVisible(true);
   await addRecentFile(filePath, fileName);
@@ -632,6 +641,11 @@ function handleEditorChange(): void {
   if (!tab || !editor) return;
   const content = editor.getContent();
   updateTabContent(tab.id, content);
+
+  // Don't mark dirty if content matches serializer baseline (round-trip artifact)
+  const baseline = serializerBaselines.get(tab.filePath);
+  if (baseline !== undefined && content === baseline) return;
+
   markDirty(tab.id);
 
   // 임시 파일은 자동 저장 안 함
@@ -658,7 +672,17 @@ async function handleSave(): Promise<void> {
     return;
   }
 
+  // Skip save if serializer output matches baseline (no real user edit)
+  const baseline = serializerBaselines.get(tab.filePath);
+  if (baseline !== undefined && content === baseline) {
+    markClean(tab.id, content);
+    return;
+  }
+
+  // Write the raw original content if unchanged, otherwise write serializer output
   await invoke("write_file", { filePath: tab.filePath, content });
+  serializerBaselines.set(tab.filePath, content);
+  rawFileContents.set(tab.filePath, content);
   markClean(tab.id, content);
   refreshDiffStats(tab.id, tab.filePath);
 }
