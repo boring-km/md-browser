@@ -51,6 +51,7 @@ import {
   addRecentFile,
 } from "./settings/index";
 import type { DiffStats, FileEntry, RecentEntry } from "./types";
+import { initResizeHandles } from "./resize";
 import {
   hamburger,
   panelLeft,
@@ -70,6 +71,7 @@ function updatePanelButtons(): void {
   const sidebarOpenBtn = document.getElementById("sidebar-open-btn");
   const tocPanel = document.getElementById("toc-panel");
   const tocOpenBtn = document.getElementById("toc-open-btn");
+  const tocResize = document.getElementById("toc-resize");
   if (sidebarEl && sidebarOpenBtn) {
     const sidebarVisible = !sidebarEl.classList.contains("collapsed");
     sidebarOpenBtn.classList.toggle("hidden", sidebarVisible);
@@ -77,6 +79,7 @@ function updatePanelButtons(): void {
   if (tocPanel && tocOpenBtn) {
     const tocVisible = !tocPanel.classList.contains("collapsed");
     tocOpenBtn.classList.toggle("hidden", tocVisible);
+    tocResize?.classList.toggle("hidden", !tocVisible);
   }
 }
 // Stores the raw file content as read from disk (before ProseMirror round-trip)
@@ -179,6 +182,9 @@ async function init(): Promise<void> {
 
   // Set initial button visibility
   updatePanelButtons();
+
+  // Resizable panels
+  initResizeHandles();
 
   // Raw markdown toggle
   rawToggleBtn.addEventListener("click", () => {
