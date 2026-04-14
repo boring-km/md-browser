@@ -104,6 +104,17 @@ async function init(): Promise<void> {
   });
   setEditorView(editor.view);
 
+  // Link click handler
+  editorContainer.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+    const anchor = target.closest("a");
+    if (!anchor) return;
+    e.preventDefault();
+    const href = anchor.getAttribute("href");
+    if (!href) return;
+    handleLinkClick(href);
+  });
+
   // Toggle buttons
   sidebarToggleBtn.addEventListener("click", () => {
     toggleSidebar();
@@ -355,6 +366,37 @@ async function handleFontSizeChange(delta: number): Promise<void> {
   const newSize = Math.max(10, Math.min(32, current + delta));
   await updateSettings({ fontSize: newSize });
   applyFontOverride(null, newSize);
+}
+
+async function handleLinkClick(href: string): Promise<void> {
+  // Web URL → open in default browser
+  if (href.startsWith("http://") || href.startsWith("https://")) {
+    await invoke("open_url_in_browser", { url: href });
+    return;
+  }
+
+  // Resolve relative path based on current file's directory
+  const tab = getActiveTab();
+  let resolvedPath = href;
+  if (tab && !href.startsWith("/")) {
+    const dirParts = tab.filePath.split("/");
+    dirParts.pop();
+    resolvedPath = dirParts.join("/") + "/" + href;
+  }
+
+  // Local .md file → open in editor as new tab
+  if (resolvedPath.endsWith(".md") || resolvedPath.endsWith(".markdown")) {
+    const fileName = resolvedPath.split("/").pop() ?? "untitled.md";
+    try {
+      await handleFileSelect(resolvedPath, fileName);
+    } catch {
+      alert(`파일을 열 수 없습니다: ${resolvedPath}`);
+    }
+    return;
+  }
+
+  // Other files → open with OS default app
+  await invoke("open_with_default_app", { path: resolvedPath });
 }
 
 async function handleNewFile(): Promise<void> {

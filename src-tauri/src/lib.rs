@@ -78,6 +78,8 @@ pub fn run() {
             commands::image::copy_image_to_assets,
             commands::font::list_system_fonts,
             commands::export::export_html,
+            commands::open::open_with_default_app,
+            commands::open::open_url_in_browser,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
