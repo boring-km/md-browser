@@ -6,6 +6,7 @@ import { syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language"
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { buildMarkdownDecorations } from "./decorations";
+import { buildWidgetDecorations } from "./widgets";
 
 export interface Editor {
   readonly view: EditorView;
@@ -74,6 +75,7 @@ export function createEditor(
     highlightSelectionMatches(),
     keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
     buildMarkdownDecorations(),
+    buildWidgetDecorations(),
     EditorView.updateListener.of((update) => {
       if (update.docChanged && onChange && !suppressChange) {
         onChange();
