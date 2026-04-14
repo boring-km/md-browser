@@ -50,8 +50,12 @@ function buildDecorations(view: EditorView): DecorationSet {
   const decos: Range<Decoration>[] = [];
   const tree = syntaxTree(view.state);
 
-  tree.iterate({
-    enter(node) {
+  // Only process visible ranges for performance on large documents
+  for (const { from, to } of view.visibleRanges) {
+    tree.iterate({
+      from,
+      to,
+      enter(node) {
       // --- ATX Headings ---
       const headingMatch = node.name.match(/^ATXHeading(\d)$/);
       if (headingMatch) {
@@ -228,7 +232,8 @@ function buildDecorations(view: EditorView): DecorationSet {
         return false;
       }
     },
-  });
+    });
+  }
 
   // Use Decoration.set with sort=true to handle out-of-order decorations
   return Decoration.set(decos, true);

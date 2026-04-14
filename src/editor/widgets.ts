@@ -204,8 +204,11 @@ function buildWidgets(view: EditorView): DecorationSet {
   const tree = syntaxTree(view.state);
   const doc = view.state.doc;
 
-  tree.iterate({
-    enter(node) {
+  for (const { from, to } of view.visibleRanges) {
+    tree.iterate({
+      from,
+      to,
+      enter(node) {
       // Mermaid code blocks
       if (node.name === "FencedCode") {
         const firstLine = doc.lineAt(node.from);
@@ -263,7 +266,8 @@ function buildWidgets(view: EditorView): DecorationSet {
         return false;
       }
     },
-  });
+    });
+  }
 
   return Decoration.set(decos, true);
 }
