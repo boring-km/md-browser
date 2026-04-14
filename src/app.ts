@@ -51,6 +51,7 @@ import {
   addRecentFile,
 } from "./settings/index";
 import type { DiffStats, FileEntry, RecentEntry } from "./types";
+import { patchOriginal } from "./editor/patch";
 import {
   hamburger,
   panelLeft,
@@ -684,10 +685,16 @@ async function handleSave(): Promise<void> {
     return;
   }
 
-  // Write the raw original content if unchanged, otherwise write serializer output
-  await invoke("write_file", { filePath: tab.filePath, content });
+  // Patch user edits onto original text to preserve formatting
+  const original = rawFileContents.get(tab.filePath);
+  const saveContent =
+    original !== undefined && baseline !== undefined
+      ? patchOriginal(original, baseline, content)
+      : content;
+
+  await invoke("write_file", { filePath: tab.filePath, content: saveContent });
+  rawFileContents.set(tab.filePath, saveContent);
   serializerBaselines.set(tab.filePath, content);
-  rawFileContents.set(tab.filePath, content);
   markClean(tab.id, content);
   refreshDiffStats(tab.id, tab.filePath);
 }

@@ -21,6 +21,7 @@
   "homepage": "https://github.com/boring-km/md-browser#readme",
   "devDependencies": {
     "@tauri-apps/cli": "^2.10.1",
+    "@types/diff-match-patch": "^1.0.36",
     "@types/markdown-it": "^14.1.2",
     "typescript": "^6.0.2",
     "vite": "^8.0.8"
@@ -28,6 +29,7 @@
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.7.0",
+    "diff-match-patch": "^1.0.5",
     "markdown-it": "^14.1.1",
     "mermaid": "^11.14.0",
     "prosemirror-commands": "^1.7.1",
