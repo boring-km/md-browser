@@ -1,13 +1,19 @@
 import type { TocEntry } from "../types";
+import type { EditorView } from "prosemirror-view";
 
 let tocContentEl: HTMLElement | null = null;
 let tocPanelEl: HTMLElement | null = null;
+let editorViewRef: EditorView | null = null;
+let cachedEntries: readonly TocEntry[] = [];
 let scrollCleanup: (() => void) | null = null;
-let currentEntries: TocEntry[] = [];
 
 export function initToc(panel: HTMLElement, content: HTMLElement): void {
   tocPanelEl = panel;
   tocContentEl = content;
+}
+
+export function setEditorView(view: EditorView): void {
+  editorViewRef = view;
 }
 
 export function toggleToc(): void {
@@ -23,27 +29,23 @@ export function setTocVisible(visible: boolean): void {
   }
 }
 
-export function updateTocFromSource(source: string): void {
-  currentEntries = extractHeadingsFromSource(source);
-  renderToc(currentEntries);
+export function updateToc(view: EditorView): void {
+  cachedEntries = extractHeadings(view);
+  renderToc(cachedEntries);
   setupScrollSpy();
 }
 
-function extractHeadingsFromSource(source: string): TocEntry[] {
+function extractHeadings(view: EditorView): TocEntry[] {
   const entries: TocEntry[] = [];
-  const lines = source.split("\n");
-  let pos = 0;
-  for (const line of lines) {
-    const match = line.match(/^(#{1,6})\s+(.+)/);
-    if (match) {
+  view.state.doc.descendants((node, pos) => {
+    if (node.type.name === "heading") {
       entries.push({
-        level: match[1].length,
-        text: match[2].trim(),
+        level: node.attrs.level,
+        text: node.textContent,
         pos,
       });
     }
-    pos += line.length + 1;
-  }
+  });
   return entries;
 }
 
@@ -65,82 +67,149 @@ function renderToc(entries: readonly TocEntry[]): void {
   }
 }
 
+// --- Scroll Spy: highlight current heading in TOC ---
+
 function setupScrollSpy(): void {
   if (scrollCleanup) scrollCleanup();
 
-  const container = document.getElementById("editor-container");
-  if (!container) return;
+  const editorContainer = document.getElementById("editor-container");
+  const rawEditor = document.getElementById("raw-editor");
 
-  // CodeMirror creates .cm-scroller inside the container
-  const scroller =
-    container.querySelector(".cm-scroller") ?? container;
+  const onEditorScroll = (): void => highlightFromEditor();
+  const onRawScroll = (): void => highlightFromRaw();
 
-  const onScroll = (): void => highlightCurrentHeading(scroller as HTMLElement);
-  scroller.addEventListener("scroll", onScroll, { passive: true });
+  editorContainer?.addEventListener("scroll", onEditorScroll, { passive: true });
+  rawEditor?.addEventListener("scroll", onRawScroll, { passive: true });
 
   scrollCleanup = () => {
-    scroller.removeEventListener("scroll", onScroll);
+    editorContainer?.removeEventListener("scroll", onEditorScroll);
+    rawEditor?.removeEventListener("scroll", onRawScroll);
   };
 
-  highlightCurrentHeading(scroller as HTMLElement);
+  // Initial highlight
+  highlightFromEditor();
 }
 
-function highlightCurrentHeading(scroller: HTMLElement): void {
-  if (!tocContentEl) return;
+function highlightFromEditor(): void {
+  const container = document.getElementById("editor-container");
+  if (!container || !tocContentEl) return;
 
-  // Find .cm-line elements that start with # (headings)
-  const lines = scroller.querySelectorAll(".cm-line");
-  const scrollerTop = scroller.getBoundingClientRect().top;
+  const headings = container.querySelectorAll("h1, h2, h3, h4, h5, h6");
+  if (headings.length === 0) return;
+
+  const containerTop = container.getBoundingClientRect().top;
   let activeIndex = 0;
-  let headingIdx = 0;
 
-  for (const line of lines) {
-    const text = line.textContent ?? "";
-    if (/^#{1,6}\s/.test(text)) {
-      const rect = line.getBoundingClientRect();
-      if (rect.top - scrollerTop <= 8) {
-        activeIndex = headingIdx;
-      }
-      headingIdx++;
+  for (let i = 0; i < headings.length; i++) {
+    const rect = headings[i].getBoundingClientRect();
+    if (rect.top - containerTop <= 8) {
+      activeIndex = i;
+    } else {
+      break;
     }
   }
 
+  setActiveTocItem(activeIndex);
+}
+
+function highlightFromRaw(): void {
+  const rawEditor = document.getElementById("raw-editor") as HTMLTextAreaElement | null;
+  if (!rawEditor || !tocContentEl) return;
+
+  const text = rawEditor.value;
+  const scrollRatio = rawEditor.scrollTop / (rawEditor.scrollHeight - rawEditor.clientHeight || 1);
+
+  // Find heading lines in raw text
+  const lines = text.split("\n");
+  const headingLineIndices: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (/^#{1,6}\s/.test(lines[i])) {
+      headingLineIndices.push(i);
+    }
+  }
+
+  if (headingLineIndices.length === 0) return;
+
+  // Approximate which heading is at current scroll position
+  const totalLines = lines.length;
+  const currentLine = Math.floor(scrollRatio * totalLines);
+  let activeIndex = 0;
+  for (let i = 0; i < headingLineIndices.length; i++) {
+    if (headingLineIndices[i] <= currentLine) {
+      activeIndex = i;
+    }
+  }
+
+  setActiveTocItem(activeIndex);
+}
+
+function setActiveTocItem(index: number): void {
+  if (!tocContentEl) return;
   const items = tocContentEl.querySelectorAll(".toc-item");
   items.forEach((el, i) => {
-    el.classList.toggle("active", i === activeIndex);
+    el.classList.toggle("active", i === index);
   });
 }
 
+// --- Scroll to heading ---
+
 function scrollToHeadingByIndex(tocIndex: number): void {
-  const container = document.getElementById("editor-container");
-  if (!container) return;
+  // Try editor container first
+  const editorContainer = document.getElementById("editor-container");
+  const rawEditor = document.getElementById("raw-editor") as HTMLTextAreaElement | null;
 
-  const scroller =
-    container.querySelector(".cm-scroller") ?? container;
-  const lines = scroller.querySelectorAll(".cm-line");
-  let headingIdx = 0;
+  const isRawVisible = rawEditor && !rawEditor.classList.contains("hidden");
 
-  for (const line of lines) {
-    const text = line.textContent ?? "";
-    if (/^#{1,6}\s/.test(text)) {
-      if (headingIdx === tocIndex) {
-        const el = line as HTMLElement;
-        const scrollerEl = scroller as HTMLElement;
-        scrollerEl.scrollTo({
-          top:
-            scrollerEl.scrollTop +
-            el.getBoundingClientRect().top -
-            scrollerEl.getBoundingClientRect().top,
-          behavior: "smooth",
-        });
-
-        const items = tocContentEl?.querySelectorAll(".toc-item");
-        items?.forEach((item, i) => {
-          item.classList.toggle("active", i === tocIndex);
-        });
-        return;
-      }
-      headingIdx++;
-    }
+  if (isRawVisible && rawEditor) {
+    scrollToHeadingInRaw(rawEditor, tocIndex);
+    return;
   }
+
+  if (editorContainer) {
+    scrollToHeadingInEditor(editorContainer, tocIndex);
+  }
+}
+
+function scrollToHeadingInEditor(container: HTMLElement, tocIndex: number): void {
+  const headings = container.querySelectorAll("h1, h2, h3, h4, h5, h6");
+  if (tocIndex < headings.length) {
+    const el = headings[tocIndex] as HTMLElement;
+    container.scrollTo({
+      top: container.scrollTop + el.getBoundingClientRect().top - container.getBoundingClientRect().top,
+      behavior: "smooth",
+    });
+    setActiveTocItem(tocIndex);
+  }
+}
+
+function scrollToHeadingInRaw(rawEditor: HTMLTextAreaElement, tocIndex: number): void {
+  const text = rawEditor.value;
+  const lines = text.split("\n");
+
+  // Find heading lines
+  let headingCount = 0;
+  let targetLineStart = 0;
+  let charCount = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (/^#{1,6}\s/.test(lines[i])) {
+      if (headingCount === tocIndex) {
+        targetLineStart = charCount;
+        break;
+      }
+      headingCount++;
+    }
+    charCount += lines[i].length + 1; // +1 for newline
+  }
+
+  // Estimate scroll position based on character offset ratio
+  const ratio = targetLineStart / (text.length || 1);
+  const scrollTarget = ratio * (rawEditor.scrollHeight - rawEditor.clientHeight);
+
+  rawEditor.scrollTo({
+    top: scrollTarget,
+    behavior: "smooth",
+  });
+
+  setActiveTocItem(tocIndex);
 }

@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { createEditor, type Editor } from "./editor/index";
+import { setupImageHandler } from "./editor/image-handler";
 import {
   initSidebar,
   toggleSidebar,
@@ -24,11 +25,18 @@ import {
 } from "./tabs/index";
 import {
   initToc,
-  updateTocFromSource,
+  setEditorView,
+  updateToc,
   toggleToc,
   setTocVisible,
 } from "./toc/index";
-import { openSearchPanel, closeSearchPanel } from "@codemirror/search";
+import {
+  initSearch,
+  updateEditorView,
+  showSearch,
+  showReplace,
+  hideSearch,
+} from "./search/index";
 import {
   loadTheme,
   detectSystemTheme,
@@ -47,11 +55,19 @@ import {
   hamburger,
   panelLeft,
   panelRight,
+  codeView,
+  editView,
 } from "./icons/index";
 
 let editor: Editor | null = null;
+let cleanupImageHandler: (() => void) | null = null;
 let currentDir: string | null = null;
 let unsavedFileCounter = 0;
+let isRawMode = false;
+// Stores the raw file content as read from disk (before ProseMirror round-trip)
+const rawFileContents = new Map<string, string>();
+// Stores the serializer baseline (ProseMirror round-trip of original) to detect real edits
+const serializerBaselines = new Map<string, string>();
 
 async function init(): Promise<void> {
   const settings = await loadSettings();
@@ -61,10 +77,7 @@ async function init(): Promise<void> {
     settings.theme === "system" ? detectSystemTheme() : settings.theme;
   loadTheme(themeName);
   watchSystemTheme((theme) => {
-    if (getSettings().theme === "system") {
-      loadTheme(theme);
-      editor?.setDarkMode(theme === "dark");
-    }
+    if (getSettings().theme === "system") loadTheme(theme);
   });
   applyFontOverride(settings.fontFamily, settings.fontSize);
 
@@ -75,11 +88,15 @@ async function init(): Promise<void> {
   const editorContainer = document.getElementById("editor-container")!;
   const tocPanel = document.getElementById("toc-panel")!;
   const tocContent = document.getElementById("toc-content")!;
+  const searchBar = document.getElementById("search-bar")!;
   const sidebarCloseBtn = document.getElementById("sidebar-close-btn")!;
   const sidebarOpenBtn = document.getElementById("sidebar-open-btn")!;
   const tocToggleBtn = document.getElementById("toc-toggle-btn")!;
   const tocOpenBtn = document.getElementById("toc-open-btn")!;
   const hamburgerMenuBtn = document.getElementById("hamburger-menu-btn")!;
+  const rawToggleBtn = document.getElementById("raw-toggle-btn")!;
+  const rawEditor = document.getElementById("raw-editor") as HTMLTextAreaElement;
+  const openFolderEmptyBtn = document.getElementById("open-folder-empty-btn")!;
 
   // Set button icons
   hamburgerMenuBtn.innerHTML = hamburger;
@@ -87,6 +104,7 @@ async function init(): Promise<void> {
   sidebarOpenBtn.innerHTML = panelLeft;
   tocToggleBtn.innerHTML = panelRight;
   tocOpenBtn.innerHTML = panelRight;
+  rawToggleBtn.innerHTML = codeView;
 
   // Sidebar
   initSidebar(sidebarEl, fileTreeEl, handleFileSelect);
@@ -101,6 +119,26 @@ async function init(): Promise<void> {
 
   // Editor
   editor = createEditor(editorContainer, handleEditorChange);
+  initSearch(searchBar, editor.view);
+  cleanupImageHandler = setupImageHandler(editor.view, () => {
+    const tab = getActiveTab();
+    if (!tab) return null;
+    const parts = tab.filePath.split("/");
+    parts.pop();
+    return parts.join("/");
+  });
+  setEditorView(editor.view);
+
+  // Link click handler
+  editorContainer.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+    const anchor = target.closest("a");
+    if (!anchor) return;
+    e.preventDefault();
+    const href = anchor.getAttribute("href");
+    if (!href) return;
+    handleLinkClick(href);
+  });
 
   // Toggle buttons
   const updatePanelButtons = (): void => {
@@ -135,11 +173,56 @@ async function init(): Promise<void> {
   // Set initial button visibility
   updatePanelButtons();
 
+  // Raw markdown toggle
+  rawToggleBtn.addEventListener("click", () => {
+    isRawMode = !isRawMode;
+    if (isRawMode) {
+      // Switch to raw mode — show original file content if available
+      const tab = getActiveTab();
+      const originalContent = tab ? rawFileContents.get(tab.filePath) : null;
+      rawEditor.value = originalContent ?? editor?.getContent() ?? "";
+      editorContainer.classList.add("hidden");
+      rawEditor.classList.remove("hidden");
+      rawToggleBtn.innerHTML = editView;
+      rawToggleBtn.title = "편집기 보기";
+    } else {
+      // Switch back to editor mode
+      const rawContent = rawEditor.value;
+      rawEditor.classList.add("hidden");
+      editorContainer.classList.remove("hidden");
+      rawToggleBtn.innerHTML = codeView;
+      rawToggleBtn.title = "Raw 마크다운 보기";
+      // Apply raw content back to editor
+      const tab = getActiveTab();
+      if (tab && editor) {
+        editor.setContent(rawContent);
+        // Update baseline and raw cache since user edited raw text directly
+        rawFileContents.set(tab.filePath, rawContent);
+        serializerBaselines.set(tab.filePath, editor.getContent());
+        updateTabContent(tab.id, rawContent);
+        markDirty(tab.id);
+        updateToc(editor.view);
+      }
+    }
+  });
+
+  // Sync raw editor changes
+  rawEditor.addEventListener("input", () => {
+    const tab = getActiveTab();
+    if (tab) {
+      updateTabContent(tab.id, rawEditor.value);
+      markDirty(tab.id);
+    }
+  });
+
   // Hamburger menu
   hamburgerMenuBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     showHamburgerMenu(hamburgerMenuBtn);
   });
+
+  // Open folder (empty state)
+  openFolderEmptyBtn.addEventListener("click", handleOpenFolder);
 
   // Handle init data from URL params (new window with specific content)
   const urlParams = new URLSearchParams(window.location.search);
@@ -175,10 +258,14 @@ async function init(): Promise<void> {
     }
     if ((e.metaKey || e.ctrlKey) && e.key === "f") {
       e.preventDefault();
-      if (editor) openSearchPanel(editor.view);
+      showSearch();
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === "h") {
+      e.preventDefault();
+      showReplace();
     }
     if (e.key === "Escape") {
-      if (editor) closeSearchPanel(editor.view);
+      hideSearch();
     }
     if ((e.metaKey || e.ctrlKey) && e.key === "o") {
       e.preventDefault();
@@ -215,21 +302,16 @@ async function init(): Promise<void> {
       case "export-pdf":
         handleExportPdf();
         break;
-      case "theme-system": {
-        const t = detectSystemTheme();
-        loadTheme(t);
-        editor?.setDarkMode(t === "dark");
+      case "theme-system":
+        loadTheme(detectSystemTheme());
         await updateSettings({ theme: "system" });
         break;
-      }
       case "theme-light":
         loadTheme("light");
-        editor?.setDarkMode(false);
         await updateSettings({ theme: "light" });
         break;
       case "theme-dark":
         loadTheme("dark");
-        editor?.setDarkMode(true);
         await updateSettings({ theme: "dark" });
         break;
       case "font-select":
@@ -473,6 +555,8 @@ async function openFolder(dirPath: string): Promise<void> {
   const parts = dirPath.split("/");
   const folderName = parts[parts.length - 1] ?? dirPath;
   setSidebarTitle(folderName);
+  const emptyEl = document.getElementById("file-tree-empty");
+  if (emptyEl) emptyEl.style.display = "none";
   const entries: FileEntry[] = await invoke("read_directory", { dirPath });
   renderTree(entries);
   await addRecentFolder(dirPath, folderName);
@@ -481,7 +565,9 @@ async function openFolder(dirPath: string): Promise<void> {
 
 async function refreshDiffStats(tabId: string, filePath: string): Promise<void> {
   try {
-    const stats: DiffStats | null = await invoke("get_git_diff_stats", { filePath });
+    const stats: DiffStats | null = await invoke("get_git_diff_stats", {
+      filePath,
+    });
     updateDiffStats(tabId, stats);
   } catch {
     updateDiffStats(tabId, null);
@@ -502,8 +588,13 @@ async function handleFileSelect(
   }
 
   const content: string = await invoke("read_file", { filePath });
+  rawFileContents.set(filePath, content);
   openTab(filePath, fileName, content);
   loadTabInEditor(content);
+  // Store serializer baseline to detect real user edits vs round-trip differences
+  if (editor) {
+    serializerBaselines.set(filePath, editor.getContent());
+  }
   setActiveFile(filePath);
   if (getSettings().tocVisible) setTocVisible(true);
   await addRecentFile(filePath, fileName);
@@ -527,7 +618,12 @@ function handleTabClose(id: string, isDirty: boolean): void {
     );
     if (!confirmed) return;
   }
+  const filePath = tab?.filePath;
   closeTab(id);
+  if (filePath) {
+    rawFileContents.delete(filePath);
+    serializerBaselines.delete(filePath);
+  }
   const active = getActiveTab();
   if (active) {
     loadTabInEditor(active.content);
@@ -542,7 +638,13 @@ function handleTabClose(id: string, isDirty: boolean): void {
 function loadTabInEditor(content: string): void {
   if (!editor) return;
   editor.setContent(content);
-  updateTocFromSource(content);
+  updateEditorView(editor.view);
+  updateToc(editor.view);
+  // Sync raw editor if in raw mode
+  if (isRawMode) {
+    const rawEditor = document.getElementById("raw-editor") as HTMLTextAreaElement;
+    rawEditor.value = content;
+  }
 }
 
 function handleEditorChange(): void {
@@ -550,14 +652,23 @@ function handleEditorChange(): void {
   if (!tab || !editor) return;
   const content = editor.getContent();
   updateTabContent(tab.id, content);
+
+  // Don't mark dirty if content matches serializer baseline (round-trip artifact)
+  const baseline = serializerBaselines.get(tab.filePath);
+  if (baseline !== undefined && content === baseline) return;
+
   markDirty(tab.id);
-  updateTocFromSource(content);
 }
 
 async function handleSave(): Promise<void> {
   const tab = getActiveTab();
-  if (!tab || !editor) return;
-  const content = editor.getContent();
+  if (!tab) return;
+
+  // Always save raw content (original formatting preserved)
+  const rawEl = document.getElementById("raw-editor") as HTMLTextAreaElement;
+  const content = isRawMode
+    ? rawEl.value
+    : rawFileContents.get(tab.filePath) ?? editor?.getContent() ?? "";
 
   if (tab.isUnsaved) {
     const filePath = await save({
@@ -572,6 +683,7 @@ async function handleSave(): Promise<void> {
   }
 
   await invoke("write_file", { filePath: tab.filePath, content });
+  rawFileContents.set(tab.filePath, content);
   markClean(tab.id, content);
   refreshDiffStats(tab.id, tab.filePath);
 }
@@ -612,17 +724,82 @@ async function handleExportHtml(): Promise<void> {
 
 async function handleFontSelect(): Promise<void> {
   const fonts: string[] = await invoke("list_system_fonts");
-  const currentFont = getSettings().fontFamily ?? "시스템 기본";
-  const selected = prompt(
-    `폰트 선택 (현재: ${currentFont})\n\n사용 가능한 폰트:\n${fonts.slice(0, 30).join(", ")}...\n\n폰트 이름 입력:`,
-  );
-  if (!selected) return;
-  if (fonts.includes(selected)) {
-    await updateSettings({ fontFamily: selected });
-    applyFontOverride(selected, null);
-  } else {
-    alert("올바른 폰트 이름이 아닙니다.");
+  const currentFont = getSettings().fontFamily ?? "";
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+
+  const modal = document.createElement("div");
+  modal.className = "modal-content";
+  modal.style.maxHeight = "500px";
+
+  const title = document.createElement("div");
+  title.className = "modal-title";
+  title.textContent = `폰트 선택${currentFont ? ` (현재: ${currentFont})` : ""}`;
+  modal.appendChild(title);
+
+  const searchInput = document.createElement("input");
+  searchInput.type = "text";
+  searchInput.placeholder = "폰트 검색...";
+  searchInput.style.cssText =
+    "width: 100%; padding: 6px 10px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); font-size: 13px; outline: none;";
+  modal.appendChild(searchInput);
+
+  const list = document.createElement("div");
+  list.className = "modal-list";
+  modal.appendChild(list);
+
+  function renderFontList(filter: string): void {
+    list.innerHTML = "";
+    const filtered = filter
+      ? fonts.filter((f) => f.toLowerCase().includes(filter.toLowerCase()))
+      : fonts;
+    for (const font of filtered.slice(0, 100)) {
+      const item = document.createElement("div");
+      item.className = "modal-list-item";
+      if (font === currentFont) {
+        item.style.background = "var(--bg-tertiary)";
+      }
+      const nameEl = document.createElement("div");
+      nameEl.className = "modal-item-name";
+      nameEl.textContent = font;
+      nameEl.style.fontFamily = `"${font}", var(--font-family)`;
+      item.appendChild(nameEl);
+      item.addEventListener("click", async () => {
+        await updateSettings({ fontFamily: font });
+        applyFontOverride(font, null);
+        overlay.remove();
+      });
+      list.appendChild(item);
+    }
+    if (filtered.length === 0) {
+      const empty = document.createElement("div");
+      empty.style.cssText =
+        "padding: 16px; text-align: center; color: var(--text-secondary); font-size: 13px;";
+      empty.textContent = "일치하는 폰트가 없습니다";
+      list.appendChild(empty);
+    }
   }
+
+  renderFontList("");
+
+  searchInput.addEventListener("input", () => {
+    renderFontList(searchInput.value);
+  });
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "modal-close-btn";
+  closeBtn.textContent = "닫기";
+  closeBtn.addEventListener("click", () => overlay.remove());
+  modal.appendChild(closeBtn);
+
+  overlay.appendChild(modal);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  document.body.appendChild(overlay);
+  searchInput.focus();
 }
 
 async function handleFontSizeChange(delta: number): Promise<void> {
@@ -643,30 +820,36 @@ function normalizeAnchor(text: string): string {
 }
 
 function scrollToAnchor(anchor: string): boolean {
+  if (!editor) return false;
   const raw = anchor.startsWith("#") ? anchor.slice(1) : anchor;
   if (!raw) return false;
   const decoded = decodeURIComponent(raw);
   const target = normalizeAnchor(decoded);
 
+  const view = editor.view;
   const container = document.getElementById("editor-container");
-  if (!container) return false;
-  const scroller = container.querySelector(".cm-scroller") ?? container;
-  const lines = scroller.querySelectorAll(".cm-line");
+  let found = false;
 
-  for (const line of lines) {
-    const text = line.textContent ?? "";
-    const match = text.match(/^#{1,6}\s+(.+)/);
-    if (match && normalizeAnchor(match[1]) === target) {
-      const el = line as HTMLElement;
-      const scrollerEl = scroller as HTMLElement;
-      scrollerEl.scrollTo({
-        top: scrollerEl.scrollTop + el.getBoundingClientRect().top - scrollerEl.getBoundingClientRect().top,
-        behavior: "smooth",
-      });
-      return true;
+  view.state.doc.descendants((node, pos) => {
+    if (found) return false;
+    if (node.type.name === "heading") {
+      const headingNorm = normalizeAnchor(node.textContent);
+      if (headingNorm === target) {
+        const dom = view.nodeDOM(pos);
+        if (dom instanceof HTMLElement && container) {
+          const containerRect = container.getBoundingClientRect();
+          const headingRect = dom.getBoundingClientRect();
+          container.scrollTo({
+            top: container.scrollTop + headingRect.top - containerRect.top,
+            behavior: "smooth",
+          });
+        }
+        found = true;
+        return false;
+      }
     }
-  }
-  return false;
+  });
+  return found;
 }
 
 async function handleLinkClick(href: string): Promise<void> {
