@@ -9,6 +9,10 @@ fn timestamp() -> u64 {
         .as_secs()
 }
 
+fn sanitize_name(name: &str) -> String {
+    name.replace(['/', '\\'], "_").replace("..", "_")
+}
+
 #[tauri::command]
 pub fn save_image_to_assets(
     doc_dir: String,
@@ -21,9 +25,17 @@ pub fn save_image_to_assets(
     }
 
     let ts = timestamp();
-    let source_label = original_name.unwrap_or_else(|| "clipboard".to_string());
+    let source_label = sanitize_name(&original_name.unwrap_or_else(|| "clipboard".to_string()));
     let file_name = format!("{}-{}.png", ts, source_label);
     let dest = assets_dir.join(&file_name);
+
+    // Verify dest stays within assets_dir
+    let canonical_assets = fs::canonicalize(&assets_dir).map_err(|e| e.to_string())?;
+    if let Some(parent) = dest.parent() {
+        if fs::canonicalize(parent).map_or(true, |p| !p.starts_with(&canonical_assets)) {
+            return Err("Invalid image path".to_string());
+        }
+    }
 
     fs::write(&dest, &image_data).map_err(|e| e.to_string())?;
 
@@ -40,7 +52,7 @@ pub fn copy_image_to_assets(doc_dir: String, source_path: String) -> Result<Stri
     let source = PathBuf::from(&source_path);
     let original_name = source
         .file_name()
-        .map(|n| n.to_string_lossy().to_string())
+        .map(|n| sanitize_name(&n.to_string_lossy()))
         .unwrap_or_else(|| "image.png".to_string());
 
     let ts = timestamp();
