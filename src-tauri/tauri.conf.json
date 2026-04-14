@@ -25,6 +25,13 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all"
+    "targets": "all",
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown"],
+        "mimeType": "text/markdown",
+        "role": "Editor"
+      }
+    ]
   }
 }
