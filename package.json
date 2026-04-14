@@ -21,7 +21,6 @@
   "homepage": "https://github.com/boring-km/md-browser#readme",
   "devDependencies": {
     "@tauri-apps/cli": "^2.10.1",
-    "@types/markdown-it": "^14.1.2",
     "typescript": "^6.0.2",
     "vite": "^8.0.8"
   },
@@ -37,16 +36,6 @@
     "@lezer/highlight": "^1.2.3",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.7.0",
-    "markdown-it": "^14.1.1",
-    "mermaid": "^11.14.0",
-    "prosemirror-commands": "^1.7.1",
-    "prosemirror-history": "^1.5.0",
-    "prosemirror-inputrules": "^1.5.1",
-    "prosemirror-keymap": "^1.2.3",
-    "prosemirror-markdown": "^1.13.4",
-    "prosemirror-model": "^1.25.4",
-    "prosemirror-schema-list": "^1.5.1",
-    "prosemirror-state": "^1.4.4",
-    "prosemirror-view": "^1.41.8"
+    "mermaid": "^11.14.0"
   }
 }
