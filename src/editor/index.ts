@@ -18,6 +18,7 @@ let suppressChange = false;
 export function createEditor(
   container: HTMLElement,
   onChange?: () => void,
+  onLinkClick?: (href: string) => void,
 ): Editor {
   const doc = editorSchema.nodes.doc.create(null, [
     editorSchema.nodes.paragraph.create(),
@@ -31,6 +32,15 @@ export function createEditor(
   const view = new EditorView(container, {
     state,
     editable: () => false,
+    handleClick(v, _pos, event) {
+      const target = event.target as HTMLElement;
+      const anchor = target.closest("a");
+      if (!anchor) return false;
+      event.preventDefault();
+      const href = anchor.getAttribute("href");
+      if (href && onLinkClick) onLinkClick(href);
+      return true;
+    },
     dispatchTransaction(transaction) {
       const newState = view.state.apply(transaction);
       view.updateState(newState);

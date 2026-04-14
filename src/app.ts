@@ -136,7 +136,7 @@ async function init(): Promise<void> {
   setTocVisible(false);
 
   // Editor
-  editor = createEditor(editorContainer, handleEditorChange);
+  editor = createEditor(editorContainer, handleEditorChange, handleLinkClick);
   initSearch(searchBar, editor.view);
   cleanupImageHandler = setupImageHandler(editor.view, () => {
     const tab = getActiveTab();
@@ -146,17 +146,6 @@ async function init(): Promise<void> {
     return parts.join("/");
   });
   setEditorView(editor.view);
-
-  // Link click handler
-  editorContainer.addEventListener("click", (e) => {
-    const target = e.target as HTMLElement;
-    const anchor = target.closest("a");
-    if (!anchor) return;
-    e.preventDefault();
-    const href = anchor.getAttribute("href");
-    if (!href) return;
-    handleLinkClick(href);
-  });
 
   // Toggle buttons
   sidebarCloseBtn.addEventListener("click", () => {
