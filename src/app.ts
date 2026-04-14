@@ -96,7 +96,6 @@ async function init(): Promise<void> {
   const hamburgerMenuBtn = document.getElementById("hamburger-menu-btn")!;
   const rawToggleBtn = document.getElementById("raw-toggle-btn")!;
   const rawEditor = document.getElementById("raw-editor") as HTMLTextAreaElement;
-  const openFolderEmptyBtn = document.getElementById("open-folder-empty-btn")!;
 
   // Set button icons
   hamburgerMenuBtn.innerHTML = hamburger;
@@ -220,9 +219,6 @@ async function init(): Promise<void> {
     e.stopPropagation();
     showHamburgerMenu(hamburgerMenuBtn);
   });
-
-  // Open folder (empty state)
-  openFolderEmptyBtn.addEventListener("click", handleOpenFolder);
 
   // Handle init data from URL params (new window with specific content)
   const urlParams = new URLSearchParams(window.location.search);
@@ -555,8 +551,6 @@ async function openFolder(dirPath: string): Promise<void> {
   const parts = dirPath.split("/");
   const folderName = parts[parts.length - 1] ?? dirPath;
   setSidebarTitle(folderName);
-  const emptyEl = document.getElementById("file-tree-empty");
-  if (emptyEl) emptyEl.style.display = "none";
   const entries: FileEntry[] = await invoke("read_directory", { dirPath });
   renderTree(entries);
   await addRecentFolder(dirPath, folderName);
