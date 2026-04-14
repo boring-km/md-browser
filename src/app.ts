@@ -64,6 +64,21 @@ let cleanupImageHandler: (() => void) | null = null;
 let currentDir: string | null = null;
 let unsavedFileCounter = 0;
 let isRawMode = false;
+
+function updatePanelButtons(): void {
+  const sidebarEl = document.getElementById("sidebar");
+  const sidebarOpenBtn = document.getElementById("sidebar-open-btn");
+  const tocPanel = document.getElementById("toc-panel");
+  const tocOpenBtn = document.getElementById("toc-open-btn");
+  if (sidebarEl && sidebarOpenBtn) {
+    const sidebarVisible = !sidebarEl.classList.contains("collapsed");
+    sidebarOpenBtn.classList.toggle("hidden", sidebarVisible);
+  }
+  if (tocPanel && tocOpenBtn) {
+    const tocVisible = !tocPanel.classList.contains("collapsed");
+    tocOpenBtn.classList.toggle("hidden", tocVisible);
+  }
+}
 // Stores the raw file content as read from disk (before ProseMirror round-trip)
 const rawFileContents = new Map<string, string>();
 // Stores the serializer baseline (ProseMirror round-trip of original) to detect real edits
@@ -141,14 +156,6 @@ async function init(): Promise<void> {
   });
 
   // Toggle buttons
-  const updatePanelButtons = (): void => {
-    const sidebarVisible = !sidebarEl.classList.contains("collapsed");
-    sidebarOpenBtn.classList.toggle("hidden", sidebarVisible);
-
-    const tocVisible = !tocPanel.classList.contains("collapsed");
-    tocOpenBtn.classList.toggle("hidden", tocVisible);
-  };
-
   sidebarCloseBtn.addEventListener("click", () => {
     setSidebarVisible(false);
     updateSettings({ sidebarVisible: false });
@@ -597,6 +604,7 @@ async function handleFileSelect(
   }
   setActiveFile(filePath);
   if (getSettings().tocVisible) setTocVisible(true);
+  updatePanelButtons();
   await addRecentFile(filePath, fileName);
   refreshDiffStats(filePath, filePath);
 }
@@ -633,6 +641,7 @@ function handleTabClose(id: string, isDirty: boolean): void {
     setActiveFile(null);
     setTocVisible(false);
   }
+  updatePanelButtons();
 }
 
 function loadTabInEditor(content: string): void {
