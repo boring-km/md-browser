@@ -202,12 +202,15 @@ async function init(): Promise<void> {
       // Apply raw content back to editor
       const tab = getActiveTab();
       if (tab && editor) {
+        const previousContent = rawFileContents.get(tab.filePath);
         editor.setContent(rawContent);
-        // Update baseline and raw cache since user edited raw text directly
         rawFileContents.set(tab.filePath, rawContent);
         serializerBaselines.set(tab.filePath, editor.getContent());
         updateTabContent(tab.id, rawContent);
-        markDirty(tab.id);
+        // Only mark dirty if content actually changed
+        if (previousContent !== rawContent) {
+          markDirty(tab.id);
+        }
         updateToc(editor.view);
       }
     }
