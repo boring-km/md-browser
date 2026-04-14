@@ -1,0 +1,30 @@
+{
+  "name": "md-browser",
+  "version": "0.1.0",
+  "description": "Typora-style lightweight markdown editor",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "tauri": "tauri"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/boring-km/md-browser.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/boring-km/md-browser/issues"
+  },
+  "homepage": "https://github.com/boring-km/md-browser#readme",
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.10.1",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.8"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.10.1"
+  }
+}
