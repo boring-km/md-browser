@@ -1,4 +1,4 @@
-import type { TabData } from "../types";
+import type { DiffStats, TabData } from "../types";
 
 export interface TabState {
   readonly tabs: readonly TabData[];
@@ -46,6 +46,7 @@ export function openTab(
     content,
     isDirty: false,
     isUnsaved,
+    diffStats: null,
   };
   currentState = {
     tabs: [...currentState.tabs, newTab],
@@ -130,6 +131,16 @@ export function getActiveTab(): TabData | null {
   return (
     currentState.tabs.find((t) => t.id === currentState.activeTabId) ?? null
   );
+}
+
+export function updateDiffStats(id: string, diffStats: DiffStats | null): void {
+  currentState = {
+    ...currentState,
+    tabs: currentState.tabs.map((t) =>
+      t.id === id ? { ...t, diffStats } : t,
+    ),
+  };
+  notify();
 }
 
 export function moveTab(fromIndex: number, toIndex: number): void {

@@ -5,6 +5,11 @@ export interface FileEntry {
   readonly children?: readonly FileEntry[];
 }
 
+export interface DiffStats {
+  readonly added: number;
+  readonly removed: number;
+}
+
 export interface TabData {
   readonly id: string;
   readonly filePath: string;
@@ -12,6 +17,7 @@ export interface TabData {
   readonly content: string;
   readonly isDirty: boolean;
   readonly isUnsaved: boolean;
+  readonly diffStats: DiffStats | null;
 }
 
 export interface RecentEntry {

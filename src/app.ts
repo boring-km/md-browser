@@ -19,6 +19,7 @@ import {
   markClean,
   markSaved,
   updateTabContent,
+  updateDiffStats,
   getTabState,
 } from "./tabs/index";
 import {
@@ -41,7 +42,7 @@ import {
   addRecentFolder,
   addRecentFile,
 } from "./settings/index";
-import type { FileEntry, RecentEntry } from "./types";
+import type { DiffStats, FileEntry, RecentEntry } from "./types";
 import {
   hamburger,
   panelLeft,
@@ -478,6 +479,15 @@ async function openFolder(dirPath: string): Promise<void> {
   await updateSettings({ lastOpenFolder: dirPath });
 }
 
+async function refreshDiffStats(tabId: string, filePath: string): Promise<void> {
+  try {
+    const stats: DiffStats | null = await invoke("get_git_diff_stats", { filePath });
+    updateDiffStats(tabId, stats);
+  } catch {
+    updateDiffStats(tabId, null);
+  }
+}
+
 async function handleFileSelect(
   filePath: string,
   fileName: string,
@@ -497,6 +507,7 @@ async function handleFileSelect(
   setActiveFile(filePath);
   if (getSettings().tocVisible) setTocVisible(true);
   await addRecentFile(filePath, fileName);
+  refreshDiffStats(filePath, filePath);
 }
 
 function handleTabSelect(filePath: string): void {
@@ -562,6 +573,7 @@ async function handleSave(): Promise<void> {
 
   await invoke("write_file", { filePath: tab.filePath, content });
   markClean(tab.id, content);
+  refreshDiffStats(tab.id, tab.filePath);
 }
 
 function handleExportPdf(): void {

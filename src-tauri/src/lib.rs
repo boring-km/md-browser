@@ -108,6 +108,7 @@ pub fn run() {
             commands::open::open_with_default_app,
             commands::open::open_url_in_browser,
             commands::window::open_new_window,
+            commands::git::get_git_diff_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
