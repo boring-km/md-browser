@@ -45,8 +45,10 @@ import {
   loadSettings,
   updateSettings,
   getSettings,
+  addRecentFolder,
+  addRecentFile,
 } from "./settings/index";
-import type { FileEntry } from "./types";
+import type { AppSettings, FileEntry } from "./types";
 
 let editor: Editor | null = null;
 let cleanupImageHandler: (() => void) | null = null;
@@ -140,6 +142,9 @@ async function init(): Promise<void> {
   openFolderBtn.addEventListener("click", handleOpenFolder);
   openFolderEmptyBtn.addEventListener("click", handleOpenFolder);
 
+  // Render recent history in empty state
+  renderRecentHistory(settings);
+
   // Keyboard shortcuts
   document.addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "s") {
@@ -231,14 +236,19 @@ async function init(): Promise<void> {
 async function handleOpenFolder(): Promise<void> {
   const selected = await open({ directory: true, multiple: false });
   if (!selected) return;
-  const dirPath = selected as string;
+  await openFolder(selected as string);
+}
+
+async function openFolder(dirPath: string): Promise<void> {
   currentDir = dirPath;
   const parts = dirPath.split("/");
-  setSidebarTitle(parts[parts.length - 1] ?? dirPath);
+  const folderName = parts[parts.length - 1] ?? dirPath;
+  setSidebarTitle(folderName);
   const emptyEl = document.getElementById("file-tree-empty");
   if (emptyEl) emptyEl.style.display = "none";
   const entries: FileEntry[] = await invoke("read_directory", { dirPath });
   renderTree(entries);
+  await addRecentFolder(dirPath, folderName);
 }
 
 async function handleFileSelect(
@@ -258,6 +268,7 @@ async function handleFileSelect(
   openTab(filePath, fileName, content);
   loadTabInEditor(content);
   setActiveFile(filePath);
+  await addRecentFile(filePath, fileName);
 }
 
 function handleTabSelect(filePath: string): void {
@@ -397,6 +408,56 @@ async function handleLinkClick(href: string): Promise<void> {
 
   // Other files → open with OS default app
   await invoke("open_with_default_app", { path: resolvedPath });
+}
+
+function renderRecentHistory(settings: AppSettings): void {
+  const emptyEl = document.getElementById("file-tree-empty");
+  if (!emptyEl) return;
+
+  const { recentFolders, recentFiles } = settings;
+  if (recentFolders.length === 0 && recentFiles.length === 0) return;
+
+  if (recentFolders.length > 0) {
+    const section = document.createElement("div");
+    section.className = "recent-section";
+
+    const title = document.createElement("div");
+    title.className = "recent-title";
+    title.textContent = "최근 폴더";
+    section.appendChild(title);
+
+    for (const entry of recentFolders) {
+      const item = document.createElement("div");
+      item.className = "recent-item";
+      item.title = entry.path;
+      item.textContent = entry.name;
+      item.addEventListener("click", () => openFolder(entry.path));
+      section.appendChild(item);
+    }
+    emptyEl.appendChild(section);
+  }
+
+  if (recentFiles.length > 0) {
+    const section = document.createElement("div");
+    section.className = "recent-section";
+
+    const title = document.createElement("div");
+    title.className = "recent-title";
+    title.textContent = "최근 파일";
+    section.appendChild(title);
+
+    for (const entry of recentFiles) {
+      const item = document.createElement("div");
+      item.className = "recent-item";
+      item.title = entry.path;
+      item.textContent = entry.name;
+      item.addEventListener("click", () =>
+        handleFileSelect(entry.path, entry.name),
+      );
+      section.appendChild(item);
+    }
+    emptyEl.appendChild(section);
+  }
 }
 
 async function handleNewFile(): Promise<void> {

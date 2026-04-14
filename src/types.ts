@@ -13,12 +13,20 @@ export interface TabData {
   readonly isDirty: boolean;
 }
 
+export interface RecentEntry {
+  readonly path: string;
+  readonly name: string;
+  readonly timestamp: number;
+}
+
 export interface AppSettings {
   readonly fontFamily: string | null;
   readonly fontSize: number;
   readonly theme: string;
   readonly sidebarVisible: boolean;
   readonly tocVisible: boolean;
+  readonly recentFolders: readonly RecentEntry[];
+  readonly recentFiles: readonly RecentEntry[];
 }
 
 export interface SearchState {
