@@ -4,148 +4,234 @@ import {
   type DecorationSet,
   type EditorView,
   type ViewUpdate,
+  WidgetType,
 } from "@codemirror/view";
+import type { Range } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
-import { RangeSetBuilder } from "@codemirror/state";
 
+// --- Heading styles ---
 const headingStyles: Record<string, string> = {
-  "1": "font-size: 2em; font-weight: bold; margin: 0.67em 0;",
-  "2": "font-size: 1.5em; font-weight: bold; margin: 0.75em 0;",
-  "3": "font-size: 1.17em; font-weight: bold; margin: 0.83em 0;",
-  "4": "font-size: 1em; font-weight: bold; margin: 1em 0;",
-  "5": "font-size: 0.83em; font-weight: bold; margin: 1.17em 0;",
-  "6": "font-size: 0.67em; font-weight: bold; margin: 1.33em 0;",
+  "1": "font-size: 2em; font-weight: bold; line-height: 1.3;",
+  "2": "font-size: 1.5em; font-weight: bold; line-height: 1.3;",
+  "3": "font-size: 1.17em; font-weight: bold; line-height: 1.4;",
+  "4": "font-size: 1em; font-weight: bold;",
+  "5": "font-size: 0.83em; font-weight: bold;",
+  "6": "font-size: 0.67em; font-weight: bold;",
 };
 
+// --- Hidden marker ---
+const hideMark = Decoration.mark({
+  attributes: {
+    style:
+      "font-size: 0; width: 0; display: inline-block; overflow: hidden;",
+  },
+});
+
+// --- HR widget ---
+class HrWidget extends WidgetType {
+  toDOM(): HTMLElement {
+    const el = document.createElement("hr");
+    el.style.border = "none";
+    el.style.borderTop = "2px solid var(--border)";
+    el.style.margin = "1em 0";
+    return el;
+  }
+}
+
+function cursorOnLine(view: EditorView, from: number, to: number): boolean {
+  const sel = view.state.selection.main;
+  const lineFrom = view.state.doc.lineAt(from).number;
+  const lineTo = view.state.doc.lineAt(to).number;
+  const cursorLine = view.state.doc.lineAt(sel.head).number;
+  return cursorLine >= lineFrom && cursorLine <= lineTo;
+}
+
 function buildDecorations(view: EditorView): DecorationSet {
-  const builder = new RangeSetBuilder<Decoration>();
+  const decos: Range<Decoration>[] = [];
   const tree = syntaxTree(view.state);
 
   tree.iterate({
     enter(node) {
-      // ATXHeading1 ~ ATXHeading6
-      const match = node.name.match(/^ATXHeading(\d)$/);
-      if (match) {
-        const level = match[1];
+      // --- ATX Headings ---
+      const headingMatch = node.name.match(/^ATXHeading(\d)$/);
+      if (headingMatch) {
+        const level = headingMatch[1];
         const style = headingStyles[level];
         if (style) {
-          builder.add(
-            node.from,
-            node.from,
-            Decoration.line({ attributes: { style } }),
+          decos.push(
+            Decoration.line({ attributes: { style } }).range(node.from, node.from),
           );
         }
-        return;
+
+        if (!cursorOnLine(view, node.from, node.to)) {
+          const nodeObj = node.node;
+          const firstChild = nodeObj.firstChild;
+          if (firstChild && firstChild.name === "HeaderMark") {
+            const hideEnd = Math.min(firstChild.to + 1, node.to);
+            decos.push(hideMark.range(firstChild.from, hideEnd));
+          }
+        }
+        // Skip children — heading content doesn't need further inline processing
+        return false;
       }
 
-      // Bold: StrongEmphasis
+      // --- Bold ---
       if (node.name === "StrongEmphasis") {
-        builder.add(
-          node.from,
-          node.to,
-          Decoration.mark({ attributes: { style: "font-weight: bold;" } }),
+        decos.push(
+          Decoration.mark({ attributes: { style: "font-weight: bold;" } }).range(
+            node.from,
+            node.to,
+          ),
         );
-        return;
+        if (!cursorOnLine(view, node.from, node.to)) {
+          decos.push(hideMark.range(node.from, node.from + 2));
+          decos.push(hideMark.range(node.to - 2, node.to));
+        }
+        return false;
       }
 
-      // Italic: Emphasis
+      // --- Italic ---
       if (node.name === "Emphasis") {
-        builder.add(
-          node.from,
-          node.to,
-          Decoration.mark({ attributes: { style: "font-style: italic;" } }),
+        decos.push(
+          Decoration.mark({ attributes: { style: "font-style: italic;" } }).range(
+            node.from,
+            node.to,
+          ),
         );
-        return;
+        if (!cursorOnLine(view, node.from, node.to)) {
+          decos.push(hideMark.range(node.from, node.from + 1));
+          decos.push(hideMark.range(node.to - 1, node.to));
+        }
+        return false;
       }
 
-      // Strikethrough
+      // --- Strikethrough ---
       if (node.name === "Strikethrough") {
-        builder.add(
-          node.from,
-          node.to,
+        decos.push(
           Decoration.mark({
-            attributes: { style: "text-decoration: line-through;" },
-          }),
+            attributes: {
+              style: "text-decoration: line-through; color: var(--text-secondary);",
+            },
+          }).range(node.from, node.to),
         );
-        return;
+        if (!cursorOnLine(view, node.from, node.to)) {
+          decos.push(hideMark.range(node.from, node.from + 2));
+          decos.push(hideMark.range(node.to - 2, node.to));
+        }
+        return false;
       }
 
-      // Inline code
+      // --- Inline code ---
       if (node.name === "InlineCode") {
-        builder.add(
-          node.from,
-          node.to,
+        decos.push(
           Decoration.mark({
             attributes: {
               style:
                 "background: var(--bg-secondary); padding: 2px 6px; border-radius: 3px; font-family: var(--code-font-family); font-size: 0.9em;",
             },
-          }),
+          }).range(node.from, node.to),
         );
-        return;
+        if (!cursorOnLine(view, node.from, node.to)) {
+          decos.push(hideMark.range(node.from, node.from + 1));
+          decos.push(hideMark.range(node.to - 1, node.to));
+        }
+        return false;
       }
 
-      // Code blocks (FencedCode)
+      // --- Fenced code blocks ---
       if (node.name === "FencedCode") {
-        builder.add(
-          node.from,
-          node.to,
-          Decoration.mark({
-            attributes: {
-              style:
-                "background: var(--bg-secondary); font-family: var(--code-font-family); font-size: 0.9em;",
-            },
-          }),
-        );
-        return;
+        const startLine = view.state.doc.lineAt(node.from);
+        const endLine = view.state.doc.lineAt(node.to);
+        for (let i = startLine.number; i <= endLine.number; i++) {
+          const line = view.state.doc.line(i);
+          decos.push(
+            Decoration.line({
+              attributes: {
+                style:
+                  "background: var(--bg-secondary); font-family: var(--code-font-family); font-size: 0.9em;",
+              },
+            }).range(line.from, line.from),
+          );
+        }
+        return false;
       }
 
-      // Blockquote
+      // --- Blockquote ---
       if (node.name === "Blockquote") {
-        builder.add(
-          node.from,
-          node.to,
-          Decoration.mark({
-            attributes: {
-              style:
-                "border-left: 4px solid var(--border); padding-left: 16px; color: var(--text-secondary);",
-            },
-          }),
-        );
-        return;
+        const startLine = view.state.doc.lineAt(node.from);
+        const endLine = view.state.doc.lineAt(node.to);
+        for (let i = startLine.number; i <= endLine.number; i++) {
+          const line = view.state.doc.line(i);
+          decos.push(
+            Decoration.line({
+              attributes: {
+                style:
+                  "border-left: 4px solid var(--border); padding-left: 16px; color: var(--text-secondary);",
+              },
+            }).range(line.from, line.from),
+          );
+        }
+        // Don't skip children — inline formatting inside blockquote should be decorated
       }
 
-      // Links
-      if (node.name === "Link" || node.name === "URL") {
-        builder.add(
-          node.from,
-          node.to,
+      // --- Links ---
+      if (node.name === "Link") {
+        decos.push(
           Decoration.mark({
             attributes: {
               style: "color: var(--accent); text-decoration: underline; cursor: pointer;",
             },
-          }),
+          }).range(node.from, node.to),
         );
-        return;
+        if (!cursorOnLine(view, node.from, node.to)) {
+          const text = view.state.sliceDoc(node.from, node.to);
+          const bracketIdx = text.indexOf("](");
+          if (bracketIdx !== -1) {
+            decos.push(hideMark.range(node.from, node.from + 1));
+            decos.push(hideMark.range(node.from + bracketIdx, node.to));
+          }
+        }
+        return false;
       }
 
-      // Horizontal rule
-      if (node.name === "HorizontalRule") {
-        builder.add(
-          node.from,
-          node.from,
-          Decoration.line({
-            attributes: {
-              style: "border-bottom: 2px solid var(--border); margin: 1em 0;",
-            },
-          }),
+      // --- Images ---
+      if (node.name === "Image") {
+        decos.push(
+          Decoration.mark({
+            attributes: { style: "color: var(--accent); font-style: italic;" },
+          }).range(node.from, node.to),
         );
-        return;
+        return false;
+      }
+
+      // --- Horizontal rule ---
+      if (node.name === "HorizontalRule") {
+        const lineEnd = view.state.doc.lineAt(node.from).to;
+        if (!cursorOnLine(view, node.from, node.to)) {
+          decos.push(
+            Decoration.line({
+              attributes: {
+                style: "font-size: 0; line-height: 0; overflow: hidden;",
+              },
+            }).range(node.from, node.from),
+          );
+          decos.push(
+            Decoration.widget({ widget: new HrWidget(), side: 1 }).range(lineEnd),
+          );
+        } else {
+          decos.push(
+            Decoration.line({
+              attributes: { style: "border-bottom: 2px solid var(--border);" },
+            }).range(node.from, node.from),
+          );
+        }
+        return false;
       }
     },
   });
 
-  return builder.finish();
+  // Use Decoration.set with sort=true to handle out-of-order decorations
+  return Decoration.set(decos, true);
 }
 
 export function buildMarkdownDecorations(): ViewPlugin<{
@@ -160,7 +246,11 @@ export function buildMarkdownDecorations(): ViewPlugin<{
       }
 
       update(update: ViewUpdate): void {
-        if (update.docChanged || update.viewportChanged) {
+        if (
+          update.docChanged ||
+          update.viewportChanged ||
+          update.selectionSet
+        ) {
           this.decorations = buildDecorations(update.view);
         }
       }
