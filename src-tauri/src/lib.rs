@@ -33,6 +33,7 @@ pub fn run() {
                 .text("open-file", "파일 열기")
                 .text("recent-folders", "최근 폴더...")
                 .separator()
+                .text("save-file", "저장")
                 .text("new-window", "새 윈도우")
                 .separator()
                 .text("export-html", "HTML로 내보내기")

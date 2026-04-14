@@ -284,6 +284,9 @@ async function init(): Promise<void> {
       case "open-file":
         await handleOpenFile();
         break;
+      case "save-file":
+        await handleSave();
+        break;
       case "recent-folders":
         await handleRecentFolders();
         break;
