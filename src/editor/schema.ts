@@ -157,6 +157,72 @@ const nodes: Record<string, NodeSpec> = {
     },
   },
 
+  table: {
+    content: "table_row+",
+    group: "block",
+    tableRole: "table",
+    isolating: true,
+    parseDOM: [{ tag: "table" }],
+    toDOM() {
+      return ["table", ["tbody", 0]];
+    },
+  },
+
+  table_row: {
+    content: "(table_cell | table_header)*",
+    tableRole: "row",
+    parseDOM: [{ tag: "tr" }],
+    toDOM() {
+      return ["tr", 0];
+    },
+  },
+
+  table_header: {
+    content: "inline*",
+    attrs: { alignment: { default: null } },
+    tableRole: "header_cell",
+    isolating: true,
+    parseDOM: [
+      {
+        tag: "th",
+        getAttrs(node) {
+          const el = node as HTMLElement;
+          return { alignment: el.style.textAlign || null };
+        },
+      },
+    ],
+    toDOM(node) {
+      const attrs: Record<string, string> = {};
+      if (node.attrs.alignment) {
+        attrs.style = `text-align: ${node.attrs.alignment}`;
+      }
+      return ["th", attrs, 0];
+    },
+  },
+
+  table_cell: {
+    content: "inline*",
+    attrs: { alignment: { default: null } },
+    tableRole: "cell",
+    isolating: true,
+    parseDOM: [
+      {
+        tag: "td",
+        getAttrs(node) {
+          const el = node as HTMLElement;
+          return { alignment: el.style.textAlign || null };
+        },
+      },
+    ],
+    toDOM(node) {
+      const attrs: Record<string, string> = {};
+      if (node.attrs.alignment) {
+        attrs.style = `text-align: ${node.attrs.alignment}`;
+      }
+      return ["td", attrs, 0];
+    },
+  },
+
   hard_break: {
     inline: true,
     group: "inline",

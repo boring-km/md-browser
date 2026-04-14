@@ -10,10 +10,9 @@
     <div id="app">
       <aside id="sidebar" class="sidebar">
         <div class="sidebar-header">
-          <button id="open-folder-btn" class="icon-btn" title="폴더 열기">📂</button>
+          <button id="hamburger-menu-btn" class="icon-btn" title="메뉴"></button>
           <span class="sidebar-title"></span>
-          <button id="new-file-btn" class="icon-btn" title="새 파일">+</button>
-          <button id="sidebar-close-btn" class="icon-btn" title="사이드바 닫기">◀</button>
+          <button id="sidebar-close-btn" class="icon-btn" title="사이드바 닫기"></button>
         </div>
         <div id="file-tree" class="file-tree">
           <div id="file-tree-empty" class="file-tree-empty">
@@ -24,17 +23,19 @@
       </aside>
       <main class="main-area">
         <div class="toolbar">
-          <button id="sidebar-toggle-btn" class="icon-btn" title="사이드바 열기">☰</button>
+          <button id="sidebar-open-btn" class="icon-btn hidden" title="사이드바 열기"></button>
           <div id="tab-bar" class="tab-bar"></div>
-          <button id="toc-toggle-btn" class="icon-btn" title="목차">≡</button>
+          <button id="raw-toggle-btn" class="icon-btn" title="Raw 마크다운 보기"></button>
+          <button id="toc-open-btn" class="icon-btn hidden" title="목차 열기"></button>
         </div>
         <div id="search-bar" class="search-bar hidden"></div>
         <div id="editor-container" class="editor-container"></div>
+        <textarea id="raw-editor" class="raw-editor hidden" spellcheck="false"></textarea>
       </main>
       <aside id="toc-panel" class="toc-panel">
         <div class="toc-header">
           <span class="toc-title">목차</span>
-          <button id="toc-close-btn" class="icon-btn" title="목차 닫기">▶</button>
+          <button id="toc-toggle-btn" class="icon-btn" title="목차 닫기"></button>
         </div>
         <div id="toc-content" class="toc-content"></div>
       </aside>

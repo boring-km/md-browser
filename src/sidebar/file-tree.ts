@@ -1,4 +1,11 @@
 import type { FileEntry } from "../types";
+import {
+  chevronRight,
+  chevronDown,
+  folderClosed,
+  folderOpen,
+  getFileIcon,
+} from "../icons/index";
 
 let treeContainer: HTMLElement | null = null;
 let onFileClick: ((filePath: string, fileName: string) => void) | null = null;
@@ -34,38 +41,55 @@ function renderEntries(
   parent: HTMLElement,
   depth: number,
 ): void {
-  for (const entry of entries) {
-    const item = document.createElement("div");
-    item.className = `file-tree-item${entry.isDirectory ? " directory" : ""}`;
-    item.setAttribute("data-path", entry.path);
+  const sorted = [...entries].sort((a, b) => {
+    if (a.isDirectory && !b.isDirectory) return -1;
+    if (!a.isDirectory && b.isDirectory) return 1;
+    return a.name.localeCompare(b.name);
+  });
 
-    for (let i = 0; i < depth; i++) {
-      const indent = document.createElement("span");
-      indent.className = "file-tree-indent";
-      item.appendChild(indent);
-    }
+  for (const entry of sorted) {
+    const item = document.createElement("div");
+    const isMd = !entry.isDirectory && /\.(md|markdown)$/i.test(entry.name);
+    const classes = ["file-tree-item"];
+    if (entry.isDirectory) classes.push("directory");
+    if (isMd) classes.push("markdown");
+    item.className = classes.join(" ");
+    item.setAttribute("data-path", entry.path);
+    item.style.paddingLeft = `${8 + depth * 16}px`;
+
+    const icon = document.createElement("span");
+    icon.className = "file-tree-icon";
 
     const label = document.createElement("span");
-    if (entry.isDirectory) {
-      label.textContent = `\u25B8 ${entry.name}`;
-    } else {
-      label.textContent = entry.name;
-    }
-    item.appendChild(label);
+    label.className = "file-tree-label";
+    label.textContent = entry.name;
 
     if (entry.path === activeFilePath) {
       item.classList.add("active");
     }
 
     if (entry.isDirectory) {
+      const chevron = document.createElement("span");
+      chevron.className = "file-tree-chevron";
+      chevron.innerHTML = chevronRight;
+
+      icon.innerHTML = folderClosed;
+
+      item.appendChild(chevron);
+      item.appendChild(icon);
+      item.appendChild(label);
+
       let expanded = false;
       const childContainer = document.createElement("div");
+      childContainer.className = "file-tree-children";
       childContainer.style.display = "none";
 
       item.addEventListener("click", () => {
         expanded = !expanded;
         childContainer.style.display = expanded ? "block" : "none";
-        label.textContent = `${expanded ? "\u25BE" : "\u25B8"} ${entry.name}`;
+        chevron.innerHTML = expanded ? chevronDown : chevronRight;
+        icon.innerHTML = expanded ? folderOpen : folderClosed;
+        item.classList.toggle("expanded", expanded);
       });
 
       parent.appendChild(item);
@@ -75,6 +99,14 @@ function renderEntries(
       }
       parent.appendChild(childContainer);
     } else {
+      const spacer = document.createElement("span");
+      spacer.className = "file-tree-chevron-spacer";
+      item.appendChild(spacer);
+
+      icon.innerHTML = getFileIcon(entry.name);
+      item.appendChild(icon);
+      item.appendChild(label);
+
       item.addEventListener("click", () => {
         onFileClick?.(entry.path, entry.name);
       });

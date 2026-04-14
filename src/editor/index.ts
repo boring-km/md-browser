@@ -4,6 +4,7 @@ import { editorSchema } from "./schema";
 import { markdownParser } from "./parser";
 import { markdownSerializer } from "./serializer";
 import { buildPlugins } from "./plugins";
+import { renderMermaidBlocks } from "./mermaid-view";
 
 export interface Editor {
   readonly view: EditorView;
@@ -32,6 +33,7 @@ export function createEditor(
       view.updateState(newState);
       if (transaction.docChanged && onChange) {
         onChange();
+        renderMermaidBlocks(container);
       }
     },
   });
@@ -44,6 +46,7 @@ export function createEditor(
       plugins: [...buildPlugins()],
     });
     view.updateState(newState);
+    renderMermaidBlocks(container);
   }
 
   function getContent(): string {

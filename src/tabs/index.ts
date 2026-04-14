@@ -6,6 +6,7 @@ export {
   getActiveTab,
   markDirty,
   markClean,
+  markSaved,
   moveTab,
   updateTabContent,
   subscribe,

@@ -18,6 +18,7 @@ import {
   getActiveTab,
   markDirty,
   markClean,
+  markSaved,
   updateTabContent,
   getTabState,
 } from "./tabs/index";
@@ -48,12 +49,21 @@ import {
   addRecentFolder,
   addRecentFile,
 } from "./settings/index";
-import type { AppSettings, FileEntry } from "./types";
+import type { FileEntry, RecentEntry } from "./types";
+import {
+  hamburger,
+  panelLeft,
+  panelRight,
+  codeView,
+  editView,
+} from "./icons/index";
 
 let editor: Editor | null = null;
 let cleanupImageHandler: (() => void) | null = null;
 let currentDir: string | null = null;
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+let unsavedFileCounter = 0;
+let isRawMode = false;
 
 async function init(): Promise<void> {
   const settings = await loadSettings();
@@ -75,13 +85,22 @@ async function init(): Promise<void> {
   const tocPanel = document.getElementById("toc-panel")!;
   const tocContent = document.getElementById("toc-content")!;
   const searchBar = document.getElementById("search-bar")!;
-  const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn")!;
   const sidebarCloseBtn = document.getElementById("sidebar-close-btn")!;
+  const sidebarOpenBtn = document.getElementById("sidebar-open-btn")!;
   const tocToggleBtn = document.getElementById("toc-toggle-btn")!;
-  const tocCloseBtn = document.getElementById("toc-close-btn")!;
-  const newFileBtn = document.getElementById("new-file-btn")!;
-  const openFolderBtn = document.getElementById("open-folder-btn")!;
+  const tocOpenBtn = document.getElementById("toc-open-btn")!;
+  const hamburgerMenuBtn = document.getElementById("hamburger-menu-btn")!;
+  const rawToggleBtn = document.getElementById("raw-toggle-btn")!;
+  const rawEditor = document.getElementById("raw-editor") as HTMLTextAreaElement;
   const openFolderEmptyBtn = document.getElementById("open-folder-empty-btn")!;
+
+  // Set button icons
+  hamburgerMenuBtn.innerHTML = hamburger;
+  sidebarCloseBtn.innerHTML = panelLeft;
+  sidebarOpenBtn.innerHTML = panelLeft;
+  tocToggleBtn.innerHTML = panelRight;
+  tocOpenBtn.innerHTML = panelRight;
+  rawToggleBtn.innerHTML = codeView;
 
   // Sidebar
   initSidebar(sidebarEl, fileTreeEl, handleFileSelect);
@@ -118,32 +137,110 @@ async function init(): Promise<void> {
   });
 
   // Toggle buttons
-  sidebarToggleBtn.addEventListener("click", () => {
-    toggleSidebar();
-    updateSettings({ sidebarVisible: !getSettings().sidebarVisible });
-  });
+  const updatePanelButtons = (): void => {
+    const sidebarVisible = !sidebarEl.classList.contains("collapsed");
+    sidebarOpenBtn.classList.toggle("hidden", sidebarVisible);
+
+    const tocVisible = !tocPanel.classList.contains("collapsed");
+    tocOpenBtn.classList.toggle("hidden", tocVisible);
+  };
+
   sidebarCloseBtn.addEventListener("click", () => {
-    toggleSidebar();
+    setSidebarVisible(false);
     updateSettings({ sidebarVisible: false });
+    updatePanelButtons();
+  });
+  sidebarOpenBtn.addEventListener("click", () => {
+    setSidebarVisible(true);
+    updateSettings({ sidebarVisible: true });
+    updatePanelButtons();
   });
   tocToggleBtn.addEventListener("click", () => {
-    toggleToc();
-    updateSettings({ tocVisible: !getSettings().tocVisible });
-  });
-  tocCloseBtn.addEventListener("click", () => {
-    toggleToc();
+    setTocVisible(false);
     updateSettings({ tocVisible: false });
+    updatePanelButtons();
+  });
+  tocOpenBtn.addEventListener("click", () => {
+    setTocVisible(true);
+    updateSettings({ tocVisible: true });
+    updatePanelButtons();
   });
 
-  // New file button
-  newFileBtn.addEventListener("click", handleNewFile);
+  // Set initial button visibility
+  updatePanelButtons();
 
-  // Open folder buttons
-  openFolderBtn.addEventListener("click", handleOpenFolder);
+  // Raw markdown toggle
+  rawToggleBtn.addEventListener("click", () => {
+    isRawMode = !isRawMode;
+    if (isRawMode) {
+      // Switch to raw mode
+      const content = editor?.getContent() ?? "";
+      rawEditor.value = content;
+      editorContainer.classList.add("hidden");
+      rawEditor.classList.remove("hidden");
+      rawToggleBtn.innerHTML = editView;
+      rawToggleBtn.title = "편집기 보기";
+    } else {
+      // Switch back to editor mode
+      const rawContent = rawEditor.value;
+      rawEditor.classList.add("hidden");
+      editorContainer.classList.remove("hidden");
+      rawToggleBtn.innerHTML = codeView;
+      rawToggleBtn.title = "Raw 마크다운 보기";
+      // Apply raw content back to editor
+      const tab = getActiveTab();
+      if (tab && editor) {
+        editor.setContent(rawContent);
+        updateTabContent(tab.id, rawContent);
+        markDirty(tab.id);
+        updateToc(editor.view);
+      }
+    }
+  });
+
+  // Sync raw editor changes
+  rawEditor.addEventListener("input", () => {
+    const tab = getActiveTab();
+    if (tab) {
+      updateTabContent(tab.id, rawEditor.value);
+      markDirty(tab.id);
+    }
+  });
+
+  // Hamburger menu
+  hamburgerMenuBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    showHamburgerMenu(hamburgerMenuBtn);
+  });
+
+  // Open folder (empty state)
   openFolderEmptyBtn.addEventListener("click", handleOpenFolder);
 
-  // Render recent history in empty state
-  renderRecentHistory(settings);
+  // Handle init data from URL params (new window with specific content)
+  const urlParams = new URLSearchParams(window.location.search);
+  const initParam = urlParams.get("init");
+  if (initParam) {
+    try {
+      const initData = JSON.parse(decodeURIComponent(initParam));
+      if (initData.type === "open-files" && Array.isArray(initData.files)) {
+        for (const filePath of initData.files) {
+          const fileName = filePath.split("/").pop() ?? "untitled.md";
+          await handleFileSelect(filePath, fileName);
+        }
+      } else if (initData.type === "open-folder" && initData.path) {
+        await openFolder(initData.path);
+      }
+    } catch {
+      // Invalid init data — ignore
+    }
+  } else if (settings.lastOpenFolder) {
+    // Auto-open last folder
+    try {
+      await openFolder(settings.lastOpenFolder);
+    } catch {
+      // Folder may have been deleted — ignore
+    }
+  }
 
   // Keyboard shortcuts
   document.addEventListener("keydown", (e) => {
@@ -178,6 +275,15 @@ async function init(): Promise<void> {
     switch (menuId) {
       case "open-folder":
         await handleOpenFolder();
+        break;
+      case "open-file":
+        await handleOpenFile();
+        break;
+      case "recent-folders":
+        await handleRecentFolders();
+        break;
+      case "new-window":
+        await invoke("open_new_window", { initData: null });
         break;
       case "export-html":
         await handleExportHtml();
@@ -215,10 +321,12 @@ async function init(): Promise<void> {
         await updateSettings({
           sidebarVisible: !getSettings().sidebarVisible,
         });
+        updatePanelButtons();
         break;
       case "toggle-toc":
         toggleToc();
         await updateSettings({ tocVisible: !getSettings().tocVisible });
+        updatePanelButtons();
         break;
     }
   });
@@ -233,10 +341,202 @@ async function init(): Promise<void> {
   });
 }
 
+function closeHamburgerMenu(): void {
+  const existing = document.getElementById("hamburger-dropdown");
+  if (existing) existing.remove();
+}
+
+function showHamburgerMenu(anchorBtn: HTMLElement): void {
+  closeHamburgerMenu();
+
+  const dropdown = document.createElement("div");
+  dropdown.id = "hamburger-dropdown";
+  dropdown.className = "dropdown-menu";
+
+  // 폴더 열기
+  const openFolderItem = document.createElement("div");
+  openFolderItem.className = "dropdown-item";
+  openFolderItem.textContent = "폴더 열기";
+  openFolderItem.addEventListener("click", () => {
+    closeHamburgerMenu();
+    handleOpenFolder();
+  });
+  dropdown.appendChild(openFolderItem);
+
+  // 파일 열기
+  const openFileItem = document.createElement("div");
+  openFileItem.className = "dropdown-item";
+  openFileItem.textContent = "파일 열기";
+  openFileItem.addEventListener("click", () => {
+    closeHamburgerMenu();
+    handleOpenFile();
+  });
+  dropdown.appendChild(openFileItem);
+
+  // 새 파일
+  const newFileItem = document.createElement("div");
+  newFileItem.className = "dropdown-item";
+  newFileItem.textContent = "새 파일";
+  newFileItem.addEventListener("click", () => {
+    closeHamburgerMenu();
+    handleNewUnsavedFile();
+  });
+  dropdown.appendChild(newFileItem);
+
+  // 새 윈도우
+  const newWindowItem = document.createElement("div");
+  newWindowItem.className = "dropdown-item";
+  newWindowItem.textContent = "새 윈도우";
+  newWindowItem.addEventListener("click", () => {
+    closeHamburgerMenu();
+    invoke("open_new_window", { initData: null });
+  });
+  dropdown.appendChild(newWindowItem);
+
+  // 구분선
+  const sep = document.createElement("div");
+  sep.className = "dropdown-separator";
+  dropdown.appendChild(sep);
+
+  // 최근 폴더 (서브메뉴)
+  const recentItem = document.createElement("div");
+  recentItem.className = "dropdown-item dropdown-item-parent";
+
+  const recentLabel = document.createElement("span");
+  recentLabel.textContent = "최근 폴더";
+  recentItem.appendChild(recentLabel);
+
+  const arrow = document.createElement("span");
+  arrow.className = "dropdown-arrow";
+  arrow.textContent = "▶";
+  recentItem.appendChild(arrow);
+
+  const subMenu = document.createElement("div");
+  subMenu.className = "dropdown-submenu";
+
+  const { recentFolders } = getSettings();
+  if (recentFolders.length === 0) {
+    const emptyItem = document.createElement("div");
+    emptyItem.className = "dropdown-item dropdown-item-disabled";
+    emptyItem.textContent = "없음";
+    subMenu.appendChild(emptyItem);
+  } else {
+    for (const folder of recentFolders) {
+      const folderItem = document.createElement("div");
+      folderItem.className = "dropdown-item";
+      folderItem.title = folder.path;
+      folderItem.textContent = folder.name;
+      folderItem.addEventListener("click", () => {
+        closeHamburgerMenu();
+        openFolder(folder.path);
+      });
+      subMenu.appendChild(folderItem);
+    }
+  }
+
+  recentItem.appendChild(subMenu);
+  dropdown.appendChild(recentItem);
+
+  // Position dropdown below the anchor button
+  const rect = anchorBtn.getBoundingClientRect();
+  dropdown.style.top = `${rect.bottom + 2}px`;
+  dropdown.style.left = `${rect.left}px`;
+
+  document.body.appendChild(dropdown);
+
+  // Close on outside click
+  const onClickOutside = (e: MouseEvent): void => {
+    if (!dropdown.contains(e.target as Node) && e.target !== anchorBtn) {
+      closeHamburgerMenu();
+      document.removeEventListener("click", onClickOutside);
+    }
+  };
+  requestAnimationFrame(() => {
+    document.addEventListener("click", onClickOutside);
+  });
+}
+
 async function handleOpenFolder(): Promise<void> {
   const selected = await open({ directory: true, multiple: false });
   if (!selected) return;
   await openFolder(selected as string);
+}
+
+async function handleRecentFolders(): Promise<void> {
+  const settings = getSettings();
+  const { recentFolders } = settings;
+  if (recentFolders.length === 0) {
+    alert("최근 열었던 폴더가 없습니다.");
+    return;
+  }
+  showRecentFolderModal(recentFolders);
+}
+
+function showRecentFolderModal(folders: readonly RecentEntry[]): void {
+  const existing = document.getElementById("recent-folder-modal");
+  if (existing) existing.remove();
+
+  const overlay = document.createElement("div");
+  overlay.id = "recent-folder-modal";
+  overlay.className = "modal-overlay";
+
+  const modal = document.createElement("div");
+  modal.className = "modal-content";
+
+  const title = document.createElement("div");
+  title.className = "modal-title";
+  title.textContent = "최근 폴더";
+  modal.appendChild(title);
+
+  const list = document.createElement("div");
+  list.className = "modal-list";
+
+  for (const folder of folders) {
+    const item = document.createElement("div");
+    item.className = "modal-list-item";
+
+    const name = document.createElement("span");
+    name.className = "modal-item-name";
+    name.textContent = folder.name;
+
+    const path = document.createElement("span");
+    path.className = "modal-item-path";
+    path.textContent = folder.path;
+
+    item.appendChild(name);
+    item.appendChild(path);
+    item.addEventListener("click", () => {
+      overlay.remove();
+      openFolder(folder.path);
+    });
+    list.appendChild(item);
+  }
+  modal.appendChild(list);
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "modal-close-btn";
+  closeBtn.textContent = "닫기";
+  closeBtn.addEventListener("click", () => overlay.remove());
+  modal.appendChild(closeBtn);
+
+  overlay.appendChild(modal);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  document.body.appendChild(overlay);
+}
+
+async function handleOpenFile(): Promise<void> {
+  const selected = await open({
+    directory: false,
+    multiple: false,
+    filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
+  });
+  if (!selected) return;
+  const filePath = selected as string;
+  const fileName = filePath.split("/").pop() ?? "untitled.md";
+  await handleFileSelect(filePath, fileName);
 }
 
 async function openFolder(dirPath: string): Promise<void> {
@@ -249,6 +549,7 @@ async function openFolder(dirPath: string): Promise<void> {
   const entries: FileEntry[] = await invoke("read_directory", { dirPath });
   renderTree(entries);
   await addRecentFolder(dirPath, folderName);
+  await updateSettings({ lastOpenFolder: dirPath });
 }
 
 async function handleFileSelect(
@@ -280,7 +581,9 @@ function handleTabSelect(filePath: string): void {
 }
 
 function handleTabClose(id: string, isDirty: boolean): void {
-  if (isDirty) {
+  const tab = getTabState().tabs.find((t) => t.id === id);
+  const needsConfirm = isDirty || (tab?.isUnsaved && tab.content.length > 0);
+  if (needsConfirm) {
     const confirmed = window.confirm(
       "저장하지 않은 변경사항이 있습니다. 닫으시겠습니까?",
     );
@@ -302,6 +605,11 @@ function loadTabInEditor(content: string): void {
   editor.setContent(content);
   updateEditorView(editor.view);
   updateToc(editor.view);
+  // Sync raw editor if in raw mode
+  if (isRawMode) {
+    const rawEditor = document.getElementById("raw-editor") as HTMLTextAreaElement;
+    rawEditor.value = content;
+  }
 }
 
 function handleEditorChange(): void {
@@ -311,6 +619,9 @@ function handleEditorChange(): void {
   updateTabContent(tab.id, content);
   markDirty(tab.id);
 
+  // 임시 파일은 자동 저장 안 함
+  if (tab.isUnsaved) return;
+
   if (saveTimeout) clearTimeout(saveTimeout);
   saveTimeout = setTimeout(() => handleSave(), 1000);
 }
@@ -319,6 +630,19 @@ async function handleSave(): Promise<void> {
   const tab = getActiveTab();
   if (!tab || !editor) return;
   const content = editor.getContent();
+
+  if (tab.isUnsaved) {
+    const filePath = await save({
+      filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
+      defaultPath: tab.fileName,
+    });
+    if (!filePath) return;
+    await invoke("write_file", { filePath, content });
+    markSaved(tab.id, filePath);
+    markClean(filePath, content);
+    return;
+  }
+
   await invoke("write_file", { filePath: tab.filePath, content });
   markClean(tab.id, content);
 }
@@ -379,7 +703,56 @@ async function handleFontSizeChange(delta: number): Promise<void> {
   applyFontOverride(null, newSize);
 }
 
+function normalizeAnchor(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\p{L}\p{N}\s-]/gu, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function scrollToAnchor(anchor: string): boolean {
+  if (!editor) return false;
+  const raw = anchor.startsWith("#") ? anchor.slice(1) : anchor;
+  if (!raw) return false;
+  const decoded = decodeURIComponent(raw);
+  const target = normalizeAnchor(decoded);
+
+  const view = editor.view;
+  const container = document.getElementById("editor-container");
+  let found = false;
+
+  view.state.doc.descendants((node, pos) => {
+    if (found) return false;
+    if (node.type.name === "heading") {
+      const headingNorm = normalizeAnchor(node.textContent);
+      if (headingNorm === target) {
+        const dom = view.nodeDOM(pos);
+        if (dom instanceof HTMLElement && container) {
+          const containerRect = container.getBoundingClientRect();
+          const headingRect = dom.getBoundingClientRect();
+          container.scrollTo({
+            top: container.scrollTop + headingRect.top - containerRect.top,
+            behavior: "smooth",
+          });
+        }
+        found = true;
+        return false;
+      }
+    }
+  });
+  return found;
+}
+
 async function handleLinkClick(href: string): Promise<void> {
+  // Internal anchor link → scroll to heading
+  if (href.startsWith("#")) {
+    scrollToAnchor(href);
+    return;
+  }
+
   // Web URL → open in default browser
   if (href.startsWith("http://") || href.startsWith("https://")) {
     await invoke("open_url_in_browser", { url: href });
@@ -410,74 +783,12 @@ async function handleLinkClick(href: string): Promise<void> {
   await invoke("open_with_default_app", { path: resolvedPath });
 }
 
-function renderRecentHistory(settings: AppSettings): void {
-  const emptyEl = document.getElementById("file-tree-empty");
-  if (!emptyEl) return;
-
-  const { recentFolders, recentFiles } = settings;
-  if (recentFolders.length === 0 && recentFiles.length === 0) return;
-
-  if (recentFolders.length > 0) {
-    const section = document.createElement("div");
-    section.className = "recent-section";
-
-    const title = document.createElement("div");
-    title.className = "recent-title";
-    title.textContent = "최근 폴더";
-    section.appendChild(title);
-
-    for (const entry of recentFolders) {
-      const item = document.createElement("div");
-      item.className = "recent-item";
-      item.title = entry.path;
-      item.textContent = entry.name;
-      item.addEventListener("click", () => openFolder(entry.path));
-      section.appendChild(item);
-    }
-    emptyEl.appendChild(section);
-  }
-
-  if (recentFiles.length > 0) {
-    const section = document.createElement("div");
-    section.className = "recent-section";
-
-    const title = document.createElement("div");
-    title.className = "recent-title";
-    title.textContent = "최근 파일";
-    section.appendChild(title);
-
-    for (const entry of recentFiles) {
-      const item = document.createElement("div");
-      item.className = "recent-item";
-      item.title = entry.path;
-      item.textContent = entry.name;
-      item.addEventListener("click", () =>
-        handleFileSelect(entry.path, entry.name),
-      );
-      section.appendChild(item);
-    }
-    emptyEl.appendChild(section);
-  }
-}
-
-async function handleNewFile(): Promise<void> {
-  if (!currentDir) return;
-  const fileName = prompt("새 파일 이름:");
-  if (!fileName) return;
-  try {
-    const filePath: string = await invoke("create_md_file", {
-      dirPath: currentDir,
-      fileName,
-    });
-    const entries: FileEntry[] = await invoke("read_directory", {
-      dirPath: currentDir,
-    });
-    renderTree(entries);
-    const name = fileName.endsWith(".md") ? fileName : `${fileName}.md`;
-    await handleFileSelect(filePath, name);
-  } catch (err) {
-    alert(`파일 생성 실패: ${err}`);
-  }
+function handleNewUnsavedFile(): void {
+  unsavedFileCounter += 1;
+  const fileName = `제목 없음-${unsavedFileCounter}.md`;
+  const tempId = `__unsaved__${unsavedFileCounter}`;
+  openTab(tempId, fileName, "", true);
+  loadTabInEditor("");
 }
 
 document.addEventListener("DOMContentLoaded", init);

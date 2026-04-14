@@ -34,7 +34,13 @@ function render(state: TabState): void {
     nameSpan.textContent = tab.fileName;
     el.appendChild(nameSpan);
 
-    if (tab.isDirty) {
+    if (tab.isUnsaved) {
+      const unsaved = document.createElement("span");
+      unsaved.className = "tab-unsaved";
+      unsaved.textContent = "\u25CF";
+      unsaved.title = "저장되지 않은 파일";
+      el.appendChild(unsaved);
+    } else if (tab.isDirty) {
       const dirty = document.createElement("span");
       dirty.className = "tab-dirty";
       dirty.textContent = "\u25CF";

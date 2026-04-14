@@ -9,22 +9,31 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
+            // On second instance, open files in a new window
+            let files: Vec<&str> = args
+                .iter()
+                .skip(1)
+                .map(|s| s.as_str())
+                .filter(|s| s.ends_with(".md"))
+                .collect();
+            if !files.is_empty() {
+                let init_data = serde_json::json!({
+                    "type": "open-files",
+                    "files": files,
+                })
+                .to_string();
+                let _ = commands::window::open_new_window(app.clone(), Some(init_data));
+            } else if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_focus();
-                let files: Vec<&str> = args
-                    .iter()
-                    .skip(1)
-                    .map(|s| s.as_str())
-                    .filter(|s| s.ends_with(".md"))
-                    .collect();
-                if !files.is_empty() {
-                    let _ = window.emit("open-files", &files);
-                }
             }
         }))
         .setup(|app| {
             let file_menu = SubmenuBuilder::new(app, "파일")
                 .text("open-folder", "폴더 열기")
+                .text("open-file", "파일 열기")
+                .text("recent-folders", "최근 폴더...")
+                .separator()
+                .text("new-window", "새 윈도우")
                 .separator()
                 .text("export-html", "HTML로 내보내기")
                 .text("export-pdf", "PDF로 내보내기")
@@ -63,7 +72,13 @@ pub fn run() {
             Ok(())
         })
         .on_menu_event(|app, event| {
-            if let Some(window) = app.get_webview_window("main") {
+            // Send menu event to the focused window
+            let windows = app.webview_windows();
+            let target = windows
+                .values()
+                .find(|w| w.is_focused().unwrap_or(false))
+                .or_else(|| windows.values().next());
+            if let Some(window) = target {
                 let _ = window.emit("menu-event", event.id().0.as_str());
             }
         })
@@ -80,6 +95,7 @@ pub fn run() {
             commands::export::export_html,
             commands::open::open_with_default_app,
             commands::open::open_url_in_browser,
+            commands::window::open_new_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

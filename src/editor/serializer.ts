@@ -39,6 +39,18 @@ export const markdownSerializer = new MarkdownSerializer(
       state.renderInline(node);
       state.closeBlock(node);
     },
+    table(state: MarkdownSerializerState, node: Node) {
+      serializeTable(state, node);
+    },
+    table_row() {
+      // handled by table serializer
+    },
+    table_header(state: MarkdownSerializerState, node: Node) {
+      state.renderInline(node);
+    },
+    table_cell(state: MarkdownSerializerState, node: Node) {
+      state.renderInline(node);
+    },
     image(state: MarkdownSerializerState, node: Node) {
       state.write(
         `![${state.esc(node.attrs.alt ?? "")}](${state.esc(node.attrs.src)}${
@@ -92,3 +104,72 @@ export const markdownSerializer = new MarkdownSerializer(
     },
   },
 );
+
+function getCellText(cell: Node): string {
+  return cell.textContent.trim();
+}
+
+function serializeTable(state: MarkdownSerializerState, node: Node): void {
+  const rows: Node[] = [];
+  node.forEach((row) => rows.push(row));
+  if (rows.length === 0) return;
+
+  const headerRow = rows[0];
+  const colCount = headerRow.childCount;
+
+  // Compute column widths
+  const widths: number[] = [];
+  for (let c = 0; c < colCount; c++) {
+    let maxW = 3; // minimum "---"
+    for (const row of rows) {
+      if (c < row.childCount) {
+        maxW = Math.max(maxW, getCellText(row.child(c)).length);
+      }
+    }
+    widths.push(maxW);
+  }
+
+  // Collect alignments from header cells
+  const alignments: (string | null)[] = [];
+  for (let c = 0; c < colCount; c++) {
+    alignments.push(headerRow.child(c).attrs.alignment ?? null);
+  }
+
+  // Render header
+  const headerCells: string[] = [];
+  for (let c = 0; c < colCount; c++) {
+    headerCells.push(` ${getCellText(headerRow.child(c)).padEnd(widths[c])} `);
+  }
+  state.write(`|${headerCells.join("|")}|`);
+  state.ensureNewLine();
+
+  // Render separator
+  const sepCells: string[] = [];
+  for (let c = 0; c < colCount; c++) {
+    const w = widths[c];
+    const align = alignments[c];
+    if (align === "center") {
+      sepCells.push(`:${"-".repeat(w)}:`);
+    } else if (align === "right") {
+      sepCells.push(` ${"-".repeat(w)}:`);
+    } else {
+      sepCells.push(` ${"-".repeat(w)} `);
+    }
+  }
+  state.write(`|${sepCells.join("|")}|`);
+  state.ensureNewLine();
+
+  // Render body rows
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    const cells: string[] = [];
+    for (let c = 0; c < colCount; c++) {
+      const text = c < row.childCount ? getCellText(row.child(c)) : "";
+      cells.push(` ${text.padEnd(widths[c])} `);
+    }
+    state.write(`|${cells.join("|")}|`);
+    state.ensureNewLine();
+  }
+
+  state.closeBlock(node);
+}

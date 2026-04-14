@@ -30,6 +30,7 @@ export function openTab(
   filePath: string,
   fileName: string,
   content: string,
+  isUnsaved = false,
 ): void {
   const id = filePath;
   const existing = currentState.tabs.find((t) => t.id === id);
@@ -38,10 +39,31 @@ export function openTab(
     notify();
     return;
   }
-  const newTab: TabData = { id, filePath, fileName, content, isDirty: false };
+  const newTab: TabData = {
+    id,
+    filePath,
+    fileName,
+    content,
+    isDirty: false,
+    isUnsaved,
+  };
   currentState = {
     tabs: [...currentState.tabs, newTab],
     activeTabId: id,
+  };
+  notify();
+}
+
+export function markSaved(id: string, newFilePath: string): void {
+  currentState = {
+    ...currentState,
+    tabs: currentState.tabs.map((t) =>
+      t.id === id
+        ? { ...t, isUnsaved: false, filePath: newFilePath, id: newFilePath }
+        : t,
+    ),
+    activeTabId:
+      currentState.activeTabId === id ? newFilePath : currentState.activeTabId,
   };
   notify();
 }

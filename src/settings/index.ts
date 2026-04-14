@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   tocVisible: true,
   recentFolders: [],
   recentFiles: [],
+  lastOpenFolder: null,
 };
 
 let currentSettings: AppSettings = DEFAULT_SETTINGS;
@@ -31,6 +32,7 @@ export async function loadSettings(): Promise<AppSettings> {
       tocVisible: parsed.tocVisible ?? DEFAULT_SETTINGS.tocVisible,
       recentFolders: parsed.recentFolders ?? DEFAULT_SETTINGS.recentFolders,
       recentFiles: parsed.recentFiles ?? DEFAULT_SETTINGS.recentFiles,
+      lastOpenFolder: parsed.lastOpenFolder ?? DEFAULT_SETTINGS.lastOpenFolder,
     };
   } catch {
     currentSettings = DEFAULT_SETTINGS;

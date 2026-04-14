@@ -11,6 +11,7 @@ export interface TabData {
   readonly fileName: string;
   readonly content: string;
   readonly isDirty: boolean;
+  readonly isUnsaved: boolean;
 }
 
 export interface RecentEntry {
@@ -27,6 +28,7 @@ export interface AppSettings {
   readonly tocVisible: boolean;
   readonly recentFolders: readonly RecentEntry[];
   readonly recentFiles: readonly RecentEntry[];
+  readonly lastOpenFolder: string | null;
 }
 
 export interface SearchState {
