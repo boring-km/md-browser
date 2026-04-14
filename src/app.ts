@@ -612,7 +612,12 @@ function handleTabClose(id: string, isDirty: boolean): void {
     );
     if (!confirmed) return;
   }
+  const filePath = tab?.filePath;
   closeTab(id);
+  if (filePath) {
+    rawFileContents.delete(filePath);
+    serializerBaselines.delete(filePath);
+  }
   const active = getActiveTab();
   if (active) {
     loadTabInEditor(active.content);
