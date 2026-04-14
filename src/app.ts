@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { createEditor, type Editor } from "./editor/index";
-import { setupImageHandler } from "./editor/image-handler";
 import {
   initSidebar,
   toggleSidebar,
@@ -24,18 +23,11 @@ import {
 } from "./tabs/index";
 import {
   initToc,
-  setEditorView,
-  updateToc,
+  updateTocFromSource,
   toggleToc,
   setTocVisible,
 } from "./toc/index";
-import {
-  initSearch,
-  updateEditorView,
-  showSearch,
-  showReplace,
-  hideSearch,
-} from "./search/index";
+import { openSearchPanel, closeSearchPanel } from "@codemirror/search";
 import {
   loadTheme,
   detectSystemTheme,
@@ -57,7 +49,6 @@ import {
 } from "./icons/index";
 
 let editor: Editor | null = null;
-let cleanupImageHandler: (() => void) | null = null;
 let currentDir: string | null = null;
 let unsavedFileCounter = 0;
 
@@ -107,26 +98,6 @@ async function init(): Promise<void> {
 
   // Editor
   editor = createEditor(editorContainer, handleEditorChange);
-  initSearch(searchBar, editor.view);
-  cleanupImageHandler = setupImageHandler(editor.view, () => {
-    const tab = getActiveTab();
-    if (!tab) return null;
-    const parts = tab.filePath.split("/");
-    parts.pop();
-    return parts.join("/");
-  });
-  setEditorView(editor.view);
-
-  // Link click handler
-  editorContainer.addEventListener("click", (e) => {
-    const target = e.target as HTMLElement;
-    const anchor = target.closest("a");
-    if (!anchor) return;
-    e.preventDefault();
-    const href = anchor.getAttribute("href");
-    if (!href) return;
-    handleLinkClick(href);
-  });
 
   // Toggle buttons
   const updatePanelButtons = (): void => {
@@ -201,14 +172,10 @@ async function init(): Promise<void> {
     }
     if ((e.metaKey || e.ctrlKey) && e.key === "f") {
       e.preventDefault();
-      showSearch();
-    }
-    if ((e.metaKey || e.ctrlKey) && e.key === "h") {
-      e.preventDefault();
-      showReplace();
+      if (editor) openSearchPanel(editor.view);
     }
     if (e.key === "Escape") {
-      hideSearch();
+      if (editor) closeSearchPanel(editor.view);
     }
     if ((e.metaKey || e.ctrlKey) && e.key === "o") {
       e.preventDefault();
@@ -557,8 +524,7 @@ function handleTabClose(id: string, isDirty: boolean): void {
 function loadTabInEditor(content: string): void {
   if (!editor) return;
   editor.setContent(content);
-  updateEditorView(editor.view);
-  updateToc(editor.view);
+  updateTocFromSource(content);
 }
 
 function handleEditorChange(): void {
@@ -567,6 +533,7 @@ function handleEditorChange(): void {
   const content = editor.getContent();
   updateTabContent(tab.id, content);
   markDirty(tab.id);
+  updateTocFromSource(content);
 }
 
 async function handleSave(): Promise<void> {
@@ -657,36 +624,30 @@ function normalizeAnchor(text: string): string {
 }
 
 function scrollToAnchor(anchor: string): boolean {
-  if (!editor) return false;
   const raw = anchor.startsWith("#") ? anchor.slice(1) : anchor;
   if (!raw) return false;
   const decoded = decodeURIComponent(raw);
   const target = normalizeAnchor(decoded);
 
-  const view = editor.view;
   const container = document.getElementById("editor-container");
-  let found = false;
+  if (!container) return false;
+  const scroller = container.querySelector(".cm-scroller") ?? container;
+  const lines = scroller.querySelectorAll(".cm-line");
 
-  view.state.doc.descendants((node, pos) => {
-    if (found) return false;
-    if (node.type.name === "heading") {
-      const headingNorm = normalizeAnchor(node.textContent);
-      if (headingNorm === target) {
-        const dom = view.nodeDOM(pos);
-        if (dom instanceof HTMLElement && container) {
-          const containerRect = container.getBoundingClientRect();
-          const headingRect = dom.getBoundingClientRect();
-          container.scrollTo({
-            top: container.scrollTop + headingRect.top - containerRect.top,
-            behavior: "smooth",
-          });
-        }
-        found = true;
-        return false;
-      }
+  for (const line of lines) {
+    const text = line.textContent ?? "";
+    const match = text.match(/^#{1,6}\s+(.+)/);
+    if (match && normalizeAnchor(match[1]) === target) {
+      const el = line as HTMLElement;
+      const scrollerEl = scroller as HTMLElement;
+      scrollerEl.scrollTo({
+        top: scrollerEl.scrollTop + el.getBoundingClientRect().top - scrollerEl.getBoundingClientRect().top,
+        behavior: "smooth",
+      });
+      return true;
     }
-  });
-  return found;
+  }
+  return false;
 }
 
 async function handleLinkClick(href: string): Promise<void> {
