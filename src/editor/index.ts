@@ -1,4 +1,4 @@
-import { EditorState } from "@codemirror/state";
+import { EditorState, Compartment } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
@@ -11,6 +11,7 @@ export interface Editor {
   readonly view: EditorView;
   setContent(markdownText: string): void;
   getContent(): string;
+  setDarkMode(isDark: boolean): void;
   destroy(): void;
 }
 
@@ -21,11 +22,14 @@ function detectDarkMode(): boolean {
   return bg !== "#ffffff" && bg !== "#fff" && bg !== "";
 }
 
+let suppressChange = false;
+
 export function createEditor(
   container: HTMLElement,
   onChange?: () => void,
 ): Editor {
   const isDark = detectDarkMode();
+  const themeCompartment = new Compartment();
 
   const baseTheme = EditorView.theme({
     "&": {
@@ -63,7 +67,7 @@ export function createEditor(
 
   const extensions = [
     baseTheme,
-    ...(isDark ? [oneDark] : []),
+    themeCompartment.of(isDark ? oneDark : []),
     markdown(),
     syntaxHighlighting(defaultHighlightStyle),
     history(),
@@ -71,7 +75,7 @@ export function createEditor(
     keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
     buildMarkdownDecorations(),
     EditorView.updateListener.of((update) => {
-      if (update.docChanged && onChange) {
+      if (update.docChanged && onChange && !suppressChange) {
         onChange();
       }
     }),
@@ -88,6 +92,7 @@ export function createEditor(
   });
 
   function setContent(markdownText: string): void {
+    suppressChange = true;
     view.dispatch({
       changes: {
         from: 0,
@@ -95,15 +100,22 @@ export function createEditor(
         insert: markdownText,
       },
     });
+    suppressChange = false;
   }
 
   function getContent(): string {
     return view.state.doc.toString();
   }
 
+  function setDarkMode(dark: boolean): void {
+    view.dispatch({
+      effects: themeCompartment.reconfigure(dark ? oneDark : []),
+    });
+  }
+
   function destroy(): void {
     view.destroy();
   }
 
-  return { view, setContent, getContent, destroy };
+  return { view, setContent, getContent, setDarkMode, destroy };
 }

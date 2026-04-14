@@ -31,7 +31,7 @@ function buildDecorations(view: EditorView): DecorationSet {
         if (style) {
           builder.add(
             node.from,
-            node.to,
+            node.from,
             Decoration.line({ attributes: { style } }),
           );
         }
@@ -133,7 +133,7 @@ function buildDecorations(view: EditorView): DecorationSet {
       if (node.name === "HorizontalRule") {
         builder.add(
           node.from,
-          node.to,
+          node.from,
           Decoration.line({
             attributes: {
               style: "border-bottom: 2px solid var(--border); margin: 1em 0;",

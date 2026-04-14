@@ -60,7 +60,10 @@ async function init(): Promise<void> {
     settings.theme === "system" ? detectSystemTheme() : settings.theme;
   loadTheme(themeName);
   watchSystemTheme((theme) => {
-    if (getSettings().theme === "system") loadTheme(theme);
+    if (getSettings().theme === "system") {
+      loadTheme(theme);
+      editor?.setDarkMode(theme === "dark");
+    }
   });
   applyFontOverride(settings.fontFamily, settings.fontSize);
 
@@ -71,7 +74,6 @@ async function init(): Promise<void> {
   const editorContainer = document.getElementById("editor-container")!;
   const tocPanel = document.getElementById("toc-panel")!;
   const tocContent = document.getElementById("toc-content")!;
-  const searchBar = document.getElementById("search-bar")!;
   const sidebarCloseBtn = document.getElementById("sidebar-close-btn")!;
   const sidebarOpenBtn = document.getElementById("sidebar-open-btn")!;
   const tocToggleBtn = document.getElementById("toc-toggle-btn")!;
@@ -212,16 +214,21 @@ async function init(): Promise<void> {
       case "export-pdf":
         handleExportPdf();
         break;
-      case "theme-system":
-        loadTheme(detectSystemTheme());
+      case "theme-system": {
+        const t = detectSystemTheme();
+        loadTheme(t);
+        editor?.setDarkMode(t === "dark");
         await updateSettings({ theme: "system" });
         break;
+      }
       case "theme-light":
         loadTheme("light");
+        editor?.setDarkMode(false);
         await updateSettings({ theme: "light" });
         break;
       case "theme-dark":
         loadTheme("dark");
+        editor?.setDarkMode(true);
         await updateSettings({ theme: "dark" });
         break;
       case "font-select":
