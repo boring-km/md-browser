@@ -245,6 +245,13 @@ body {
   font-size: 10px;
 }
 
+.tab-diff {
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-family: var(--code-font-family);
+  white-space: nowrap;
+}
+
 .tab-unsaved {
   color: #e5a00d;
   font-size: 10px;

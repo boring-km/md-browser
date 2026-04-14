@@ -7,6 +7,7 @@ export {
   markDirty,
   markClean,
   markSaved,
+  updateDiffStats,
   moveTab,
   updateTabContent,
   subscribe,

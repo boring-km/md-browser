@@ -34,6 +34,13 @@ function render(state: TabState): void {
     nameSpan.textContent = tab.fileName;
     el.appendChild(nameSpan);
 
+    if (tab.diffStats) {
+      const diff = document.createElement("span");
+      diff.className = "tab-diff";
+      diff.textContent = `+${tab.diffStats.added}/-${tab.diffStats.removed}`;
+      el.appendChild(diff);
+    }
+
     if (tab.isUnsaved) {
       const unsaved = document.createElement("span");
       unsaved.className = "tab-unsaved";
