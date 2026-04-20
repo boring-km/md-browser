@@ -1,21 +1,52 @@
 mod commands;
+#[cfg(target_os = "macos")]
+mod macos_open_files;
 
+use std::sync::Mutex;
 use tauri::menu::{MenuBuilder, SubmenuBuilder};
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, RunEvent};
+
+pub struct PendingFiles(pub Mutex<Vec<String>>);
+
+fn filter_md_args<I, S>(args: I) -> Vec<String>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    args.into_iter()
+        .map(Into::into)
+        .filter(|s| s.ends_with(".md") || s.ends_with(".markdown"))
+        .map(|s| {
+            let p = std::path::Path::new(&s);
+            if p.is_absolute() {
+                s
+            } else {
+                std::env::current_dir()
+                    .map(|d| d.join(p).to_string_lossy().to_string())
+                    .unwrap_or(s)
+            }
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn take_pending_files(state: tauri::State<'_, PendingFiles>) -> Vec<String> {
+    let mut guard = state.0.lock().unwrap();
+    std::mem::take(&mut *guard)
+}
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    #[cfg(target_os = "macos")]
+    macos_open_files::install_handler();
+
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             // On second instance, open files in a new window
-            let files: Vec<&str> = args
-                .iter()
-                .skip(1)
-                .map(|s| s.as_str())
-                .filter(|s| s.ends_with(".md"))
-                .collect();
+            let files = filter_md_args(args.into_iter().skip(1));
             if !files.is_empty() {
                 let init_data = serde_json::json!({
                     "type": "open-files",
@@ -28,34 +59,17 @@ pub fn run() {
             }
         }))
         .setup(|app| {
-            // Open files passed as CLI arguments on first launch
-            let args: Vec<String> = std::env::args().skip(1).collect();
-            let files: Vec<String> = args
-                .into_iter()
-                .filter(|s| s.ends_with(".md") || s.ends_with(".markdown"))
-                .map(|s| {
-                    // Resolve relative paths to absolute
-                    let p = std::path::Path::new(&s);
-                    if p.is_absolute() {
-                        s
-                    } else {
-                        std::env::current_dir()
-                            .map(|d| d.join(p).to_string_lossy().to_string())
-                            .unwrap_or(s)
-                    }
-                })
-                .collect();
-
-            if !files.is_empty() {
-                let app_handle = app.handle().clone();
-                std::thread::spawn(move || {
-                    // Wait for the window to be ready before emitting
-                    std::thread::sleep(std::time::Duration::from_millis(600));
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.emit("open-files", &files);
-                    }
-                });
+            // Collect CLI file arguments and any AppleEvents received before setup.
+            let mut files = filter_md_args(std::env::args().skip(1));
+            #[cfg(target_os = "macos")]
+            {
+                let queued: Vec<String> = macos_open_files::take_queued_paths()
+                    .into_iter()
+                    .filter(|s| s.ends_with(".md") || s.ends_with(".markdown"))
+                    .collect();
+                files.extend(queued);
             }
+            app.manage(PendingFiles(Mutex::new(files)));
 
             let file_menu = SubmenuBuilder::new(app, "파일")
                 .text("open-folder", "폴더 열기")
@@ -138,7 +152,50 @@ pub fn run() {
             commands::open::open_url_in_browser,
             commands::window::open_new_window,
             commands::git::get_git_diff_stats,
+            take_pending_files,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        // Drain any AppleEvent-queued paths (macOS) and route them to the main window.
+        #[cfg(target_os = "macos")]
+        {
+            let queued: Vec<String> = macos_open_files::take_queued_paths()
+                .into_iter()
+                .filter(|s| s.ends_with(".md") || s.ends_with(".markdown"))
+                .collect();
+            if !queued.is_empty() {
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.set_focus();
+                    let _ = window.emit("open-files", &queued);
+                } else if let Some(state) = app_handle.try_state::<PendingFiles>() {
+                    state.0.lock().unwrap().extend(queued);
+                }
+            }
+        }
+
+        if let RunEvent::Opened { urls } = &event {
+            let files: Vec<String> = urls
+                .iter()
+                .filter_map(|u| u.to_file_path().ok())
+                .map(|p| p.to_string_lossy().to_string())
+                .filter(|s| s.ends_with(".md") || s.ends_with(".markdown"))
+                .collect();
+            if files.is_empty() {
+                return;
+            }
+            if let Some(window) = app_handle.get_webview_window("main") {
+                let _ = window.set_focus();
+                let _ = window.emit("open-files", &files);
+            } else {
+                // Window not ready yet — stash for the frontend to pull on init.
+                #[cfg(target_os = "macos")]
+                macos_open_files::push_paths(files.clone());
+                if let Some(state) = app_handle.try_state::<PendingFiles>() {
+                    state.0.lock().unwrap().extend(files);
+                }
+            }
+        }
+    });
 }

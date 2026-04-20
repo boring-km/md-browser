@@ -229,24 +229,44 @@ async function init(): Promise<void> {
   // Open folder (empty state)
   openFolderEmptyBtn.addEventListener("click", handleOpenFolder);
 
+  // Register open-files listener early so Finder double-click / RunEvent::Opened
+  // is never missed while init is still running.
+  listen<string[]>("open-files", async (event) => {
+    await openFilesWithParentFolder(event.payload);
+  });
+
   // Handle init data from URL params (new window with specific content)
   const urlParams = new URLSearchParams(window.location.search);
   const initParam = urlParams.get("init");
+  let openedFromArgs = false;
   if (initParam) {
     try {
       const initData = JSON.parse(decodeURIComponent(initParam));
       if (initData.type === "open-files" && Array.isArray(initData.files)) {
-        for (const filePath of initData.files) {
-          const fileName = filePath.split("/").pop() ?? "untitled.md";
-          await handleFileSelect(filePath, fileName);
-        }
+        await openFilesWithParentFolder(initData.files);
+        openedFromArgs = true;
       } else if (initData.type === "open-folder" && initData.path) {
         await openFolder(initData.path);
+        openedFromArgs = true;
       }
     } catch {
       // Invalid init data — ignore
     }
-  } else if (settings.lastOpenFolder) {
+  } else {
+    // CLI args / Finder "Open With" on first launch are stashed by the Rust
+    // side; drain them before falling back to lastOpenFolder.
+    try {
+      const pending = await invoke<string[]>("take_pending_files");
+      if (pending.length > 0) {
+        await openFilesWithParentFolder(pending);
+        openedFromArgs = true;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!openedFromArgs && settings.lastOpenFolder) {
     // Auto-open last folder
     try {
       await openFolder(settings.lastOpenFolder);
@@ -347,14 +367,6 @@ async function init(): Promise<void> {
     }
   });
 
-  // Single-instance: open files from Finder double-click
-  listen<string[]>("open-files", async (event) => {
-    for (const filePath of event.payload) {
-      const parts = filePath.split("/");
-      const fileName = parts[parts.length - 1] ?? "untitled.md";
-      await handleFileSelect(filePath, fileName);
-    }
-  });
 }
 
 function closeHamburgerMenu(): void {
@@ -550,9 +562,32 @@ async function handleOpenFile(): Promise<void> {
     filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
   });
   if (!selected) return;
-  const filePath = selected as string;
-  const fileName = filePath.split("/").pop() ?? "untitled.md";
-  await handleFileSelect(filePath, fileName);
+  await openFilesWithParentFolder([selected as string]);
+}
+
+function parentDir(filePath: string): string {
+  const idx = filePath.lastIndexOf("/");
+  return idx > 0 ? filePath.slice(0, idx) : "";
+}
+
+// Open one or more files and, if no folder is currently loaded in the sidebar,
+// load the first file's parent directory so the sidebar isn't empty.
+async function openFilesWithParentFolder(files: string[]): Promise<void> {
+  if (files.length === 0) return;
+  if (!currentDir) {
+    const dir = parentDir(files[0]);
+    if (dir) {
+      try {
+        await openFolder(dir);
+      } catch {
+        // Folder may be inaccessible — keep opening files regardless.
+      }
+    }
+  }
+  for (const filePath of files) {
+    const fileName = filePath.split("/").pop() ?? "untitled.md";
+    await handleFileSelect(filePath, fileName);
+  }
 }
 
 async function openFolder(dirPath: string): Promise<void> {

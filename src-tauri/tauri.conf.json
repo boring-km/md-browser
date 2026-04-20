@@ -37,7 +37,9 @@
       {
         "ext": ["md", "markdown"],
         "mimeType": "text/markdown",
-        "role": "Editor"
+        "role": "Editor",
+        "rank": "Default",
+        "contentTypes": ["net.daringfireball.markdown", "public.plain-text"]
       }
     ]
   }
