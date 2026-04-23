@@ -234,6 +234,41 @@ const nodes: Record<string, NodeSpec> = {
     },
   },
 
+  html_block: {
+    content: "text*",
+    group: "block",
+    code: true,
+    defining: true,
+    marks: "",
+    parseDOM: [
+      {
+        tag: "pre.html-block",
+        preserveWhitespace: "full" as const,
+      },
+    ],
+    toDOM() {
+      return ["pre", { class: "html-block" }, ["code", 0]];
+    },
+  },
+
+  html_inline: {
+    inline: true,
+    group: "inline",
+    atom: true,
+    attrs: { html: { default: "" } },
+    parseDOM: [
+      {
+        tag: "span.html-inline",
+        getAttrs(node) {
+          return { html: (node as HTMLElement).textContent ?? "" };
+        },
+      },
+    ],
+    toDOM(node) {
+      return ["span", { class: "html-inline" }, node.attrs.html];
+    },
+  },
+
   text: { group: "inline" },
 };
 
