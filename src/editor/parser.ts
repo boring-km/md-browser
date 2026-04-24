@@ -2,7 +2,7 @@ import { MarkdownParser } from "prosemirror-markdown";
 import markdownit from "markdown-it";
 import { editorSchema } from "./schema";
 
-const md = markdownit("commonmark", { html: false })
+const md = markdownit("commonmark", { html: true })
   .enable("strikethrough")
   .enable("table");
 
@@ -61,6 +61,11 @@ export const markdownParser = new MarkdownParser(editorSchema, md, {
   },
   code_inline: { mark: "code" },
   s: { mark: "strikethrough" },
+  html_block: {
+    block: "html_block",
+    noCloseToken: true,
+    getAttrs: () => ({}),
+  },
 });
 
 // Inject table token handlers directly into the parser.
@@ -101,3 +106,17 @@ h.td_open = (state: any, tok: any) => {
   state.openNode(cellType, { alignment });
 };
 h.td_close = (state: any) => state.closeNode();
+
+const htmlBlockType = editorSchema.nodes.html_block;
+const htmlInlineType = editorSchema.nodes.html_inline;
+
+h.html_block = (state: any, tok: any) => {
+  state.openNode(htmlBlockType);
+  const content = (tok.content ?? "").replace(/\n$/, "");
+  if (content) state.addText(content);
+  state.closeNode();
+};
+
+h.html_inline = (state: any, tok: any) => {
+  state.addNode(htmlInlineType, { html: tok.content ?? "" });
+};
