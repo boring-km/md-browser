@@ -56,15 +56,12 @@ import {
   hamburger,
   panelLeft,
   panelRight,
-  codeView,
-  editView,
 } from "./icons/index";
 
 let editor: Editor | null = null;
 let cleanupImageHandler: (() => void) | null = null;
 let currentDir: string | null = null;
 let unsavedFileCounter = 0;
-let isRawMode = false;
 
 function updatePanelButtons(): void {
   const sidebarEl = document.getElementById("sidebar");
@@ -82,10 +79,6 @@ function updatePanelButtons(): void {
     tocResize?.classList.toggle("hidden", !tocVisible);
   }
 }
-// Stores the raw file content as read from disk (before ProseMirror round-trip)
-const rawFileContents = new Map<string, string>();
-// Stores the serializer baseline (ProseMirror round-trip of original) to detect real edits
-const serializerBaselines = new Map<string, string>();
 
 async function init(): Promise<void> {
   const settings = await loadSettings();
@@ -112,8 +105,6 @@ async function init(): Promise<void> {
   const tocToggleBtn = document.getElementById("toc-toggle-btn")!;
   const tocOpenBtn = document.getElementById("toc-open-btn")!;
   const hamburgerMenuBtn = document.getElementById("hamburger-menu-btn")!;
-  const rawToggleBtn = document.getElementById("raw-toggle-btn")!;
-  const rawEditor = document.getElementById("raw-editor") as HTMLTextAreaElement;
   const openFolderEmptyBtn = document.getElementById("open-folder-empty-btn")!;
 
   // Set button icons
@@ -122,7 +113,6 @@ async function init(): Promise<void> {
   sidebarOpenBtn.innerHTML = panelLeft;
   tocToggleBtn.innerHTML = panelRight;
   tocOpenBtn.innerHTML = panelRight;
-  rawToggleBtn.innerHTML = codeView;
 
   // Sidebar
   initSidebar(sidebarEl, fileTreeEl, handleFileSelect);
@@ -174,51 +164,6 @@ async function init(): Promise<void> {
 
   // Resizable panels
   initResizeHandles();
-
-  // Raw markdown toggle
-  rawToggleBtn.addEventListener("click", () => {
-    isRawMode = !isRawMode;
-    if (isRawMode) {
-      // Switch to raw mode — show original file content if available
-      const tab = getActiveTab();
-      const originalContent = tab ? rawFileContents.get(tab.filePath) : null;
-      rawEditor.value = originalContent ?? editor?.getContent() ?? "";
-      editorContainer.classList.add("hidden");
-      rawEditor.classList.remove("hidden");
-      rawToggleBtn.innerHTML = editView;
-      rawToggleBtn.title = "편집기 보기";
-    } else {
-      // Switch back to editor mode
-      const rawContent = rawEditor.value;
-      rawEditor.classList.add("hidden");
-      editorContainer.classList.remove("hidden");
-      rawToggleBtn.innerHTML = codeView;
-      rawToggleBtn.title = "Raw 마크다운 보기";
-      // Apply raw content back to editor
-      const tab = getActiveTab();
-      if (tab && editor) {
-        const previousContent = rawFileContents.get(tab.filePath);
-        editor.setContent(rawContent);
-        rawFileContents.set(tab.filePath, rawContent);
-        serializerBaselines.set(tab.filePath, editor.getContent());
-        updateTabContent(tab.id, rawContent);
-        // Only mark dirty if content actually changed
-        if (previousContent !== rawContent) {
-          markDirty(tab.id);
-        }
-        updateToc(editor.view);
-      }
-    }
-  });
-
-  // Sync raw editor changes
-  rawEditor.addEventListener("input", () => {
-    const tab = getActiveTab();
-    if (tab) {
-      updateTabContent(tab.id, rawEditor.value);
-      markDirty(tab.id);
-    }
-  });
 
   // Hamburger menu
   hamburgerMenuBtn.addEventListener("click", (e) => {
@@ -628,13 +573,8 @@ async function handleFileSelect(
   }
 
   const content: string = await invoke("read_file", { filePath });
-  rawFileContents.set(filePath, content);
   openTab(filePath, fileName, content);
   loadTabInEditor(content);
-  // Store serializer baseline to detect real user edits vs round-trip differences
-  if (editor) {
-    serializerBaselines.set(filePath, editor.getContent());
-  }
   setActiveFile(filePath);
   if (getSettings().tocVisible) setTocVisible(true);
   updatePanelButtons();
@@ -659,12 +599,7 @@ function handleTabClose(id: string, isDirty: boolean): void {
     );
     if (!confirmed) return;
   }
-  const filePath = tab?.filePath;
   closeTab(id);
-  if (filePath) {
-    rawFileContents.delete(filePath);
-    serializerBaselines.delete(filePath);
-  }
   const active = getActiveTab();
   if (active) {
     loadTabInEditor(active.content);
@@ -682,11 +617,6 @@ function loadTabInEditor(content: string): void {
   editor.setContent(content);
   updateEditorView(editor.view);
   updateToc(editor.view);
-  // Sync raw editor if in raw mode
-  if (isRawMode) {
-    const rawEditor = document.getElementById("raw-editor") as HTMLTextAreaElement;
-    rawEditor.value = content;
-  }
 }
 
 function handleEditorChange(): void {
@@ -694,23 +624,14 @@ function handleEditorChange(): void {
   if (!tab || !editor) return;
   const content = editor.getContent();
   updateTabContent(tab.id, content);
-
-  // Don't mark dirty if content matches serializer baseline (round-trip artifact)
-  const baseline = serializerBaselines.get(tab.filePath);
-  if (baseline !== undefined && content === baseline) return;
-
   markDirty(tab.id);
 }
 
 async function handleSave(): Promise<void> {
   const tab = getActiveTab();
-  if (!tab) return;
+  if (!tab || !editor) return;
 
-  // Always save raw content (original formatting preserved)
-  const rawEl = document.getElementById("raw-editor") as HTMLTextAreaElement;
-  const content = isRawMode
-    ? rawEl.value
-    : rawFileContents.get(tab.filePath) ?? editor?.getContent() ?? "";
+  const content = editor.getContent();
 
   if (tab.isUnsaved) {
     const filePath = await save({
@@ -725,7 +646,6 @@ async function handleSave(): Promise<void> {
   }
 
   await invoke("write_file", { filePath: tab.filePath, content });
-  rawFileContents.set(tab.filePath, content);
   markClean(tab.id, content);
   refreshDiffStats(tab.id, tab.filePath);
 }
