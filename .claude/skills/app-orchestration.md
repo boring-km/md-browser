@@ -14,7 +14,7 @@ description: app.ts 메인 흐름, 키보드 단축키, 이벤트 핸들러, 초
 3. 버튼에 SVG 아이콘 설정
 4. 사이드바, 탭바, TOC, 에디터, 검색 초기화
 5. 토글 버튼 이벤트 바인딩 + `updatePanelButtons()`
-6. Raw 토글, 햄버거 메뉴 이벤트 바인딩
+6. 햄버거 메뉴 이벤트 바인딩
 7. URL init data 처리 또는 lastOpenFolder 자동 열기
 8. 키보드 단축키 등록
 9. 네이티브 메뉴 이벤트 리스닝
@@ -35,9 +35,8 @@ description: app.ts 메인 흐름, 키보드 단축키, 이벤트 핸들러, 초
 
 1. 활성 탭 확인
 2. isUnsaved → save 다이얼로그 → 위치 선택 → markSaved
-3. baseline 비교 → 같으면 스킵 (원본 보존)
-4. `patchOriginal(original, baseline, current)` → 원본에 변경분만 적용
-5. write_file → baseline/rawFileContents 갱신 → markClean → diffStats 갱신
+3. `editor.getContent()` → 마크다운 직렬화
+4. write_file → markClean → diffStats 갱신
 
 ## 전역 상태
 
@@ -46,9 +45,6 @@ description: app.ts 메인 흐름, 키보드 단축키, 이벤트 핸들러, 초
 | `editor` | Editor 인스턴스 |
 | `currentDir` | 현재 열린 폴더 경로 |
 | `unsavedFileCounter` | 임시 파일 번호 |
-| `isRawMode` | Raw 모드 여부 |
-| `rawFileContents` | Map<filePath, 디스크 원본> |
-| `serializerBaselines` | Map<filePath, round-trip 결과> |
 
 ## 링크 클릭 (handleLinkClick)
 
