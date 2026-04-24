@@ -79,6 +79,13 @@ export const markdownSerializer = new MarkdownSerializer(
     hard_break(state: MarkdownSerializerState) {
       state.write("  \n");
     },
+    html_block(state: MarkdownSerializerState, node: Node) {
+      state.write(node.textContent);
+      state.closeBlock(node);
+    },
+    html_inline(state: MarkdownSerializerState, node: Node) {
+      state.write(node.attrs.html);
+    },
     text(state: MarkdownSerializerState, node: Node) {
       state.text(node.text ?? "");
     },
