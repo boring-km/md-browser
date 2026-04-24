@@ -48,11 +48,10 @@ describe("parser html nodes", () => {
     const types: string[] = [];
     p.forEach((c) => types.push(c.type.name));
     expect(types).toContain("html_inline");
-    let found: string | null = null;
+    const htmlTags: string[] = [];
     p.forEach((c) => {
-      if (c.type.name === "html_inline" && found === null)
-        found = c.attrs.html;
+      if (c.type.name === "html_inline") htmlTags.push(c.attrs.html);
     });
-    expect(found).toBe("<sub>");
+    expect(htmlTags).toEqual(["<sub>", "</sub>"]);
   });
 });

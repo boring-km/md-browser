@@ -61,11 +61,6 @@ export const markdownParser = new MarkdownParser(editorSchema, md, {
   },
   code_inline: { mark: "code" },
   s: { mark: "strikethrough" },
-  html_block: {
-    block: "html_block",
-    noCloseToken: true,
-    getAttrs: () => ({}),
-  },
 });
 
 // Inject table token handlers directly into the parser.
