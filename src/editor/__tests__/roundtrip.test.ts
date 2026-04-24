@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -10,6 +11,9 @@ const fixturesDir = join(
   "fixtures",
 );
 const files = readdirSync(fixturesDir).filter((f) => f.endsWith(".md"));
+if (files.length === 0) {
+  throw new Error(`no fixtures found in ${fixturesDir}`);
+}
 
 function cycle(md: string): string {
   const doc = markdownParser.parse(md);
