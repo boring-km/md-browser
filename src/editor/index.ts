@@ -31,7 +31,7 @@ export function createEditor(
 
   const view = new EditorView(container, {
     state,
-    editable: () => false,
+    editable: () => true,
     handleClick(v, _pos, event) {
       const target = event.target as HTMLElement;
       const anchor = target.closest("a");
@@ -48,13 +48,24 @@ export function createEditor(
         suppressChange = true;
         renderMermaidBlocks(container);
         suppressChange = false;
+        if (onChange) onChange();
       }
     },
   });
 
   function setContent(markdown: string): void {
-    const parsed = markdownParser.parse(markdown);
-    if (!parsed) return;
+    let parsed;
+    try {
+      parsed = markdownParser.parse(markdown);
+    } catch (err) {
+      console.error("markdown parse failed:", err);
+      parsed = null;
+    }
+    if (!parsed) {
+      parsed = editorSchema.nodes.doc.create(null, [
+        editorSchema.nodes.paragraph.create(),
+      ]);
+    }
     const newState = EditorState.create({
       doc: parsed,
       plugins: [...buildPlugins()],
