@@ -80,11 +80,11 @@ export const markdownSerializer = new MarkdownSerializer(
       state.write("  \n");
     },
     html_block(state: MarkdownSerializerState, node: Node) {
-      state.write(node.textContent);
+      state.text(node.textContent, false);
       state.closeBlock(node);
     },
     html_inline(state: MarkdownSerializerState, node: Node) {
-      state.write(node.attrs.html);
+      state.write(node.attrs.html ?? "");
     },
     text(state: MarkdownSerializerState, node: Node) {
       state.text(node.text ?? "");
