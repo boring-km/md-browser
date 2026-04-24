@@ -295,22 +295,6 @@ body {
   padding: 24px 40px;
 }
 
-.raw-editor {
-  flex: 1;
-  padding: 24px 40px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  border: none;
-  outline: none;
-  resize: none;
-  font-family: var(--code-font-family);
-  font-size: 14px;
-  line-height: 1.8;
-  tab-size: 4;
-  overflow-y: auto;
-  width: 100%;
-}
-
 .editor-container .ProseMirror {
   max-width: 720px;
   margin: 0 auto;
